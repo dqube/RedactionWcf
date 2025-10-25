@@ -6,6 +6,7 @@ using System.Web.Http;
 using System.Web.Mvc;
 using System.Web.Optimization;
 using System.Web.Routing;
+using System.Diagnostics;
 
 namespace RedactionWcf
 {
@@ -18,6 +19,15 @@ namespace RedactionWcf
             FilterConfig.RegisterGlobalFilters(GlobalFilters.Filters);
             RouteConfig.RegisterRoutes(RouteTable.Routes);
             BundleConfig.RegisterBundles(BundleTable.Bundles);
+            
+            // Verify HTTP Module is configured
+            Debug.WriteLine("Application Started - HTTP Modules should be loading...");
+        }
+
+        protected void Application_BeginRequest(object sender, EventArgs e)
+        {
+            // This will fire for every request - use for debugging module issues
+            Debug.WriteLine($"Application_BeginRequest: {Request.RawUrl}");
         }
     }
 }

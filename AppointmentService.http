@@ -1,28 +1,40 @@
-### WCF Appointment Service REST API Tests
+### WCF Appointment Service REST API Tests with Correlation Tracking
 ### Base URL - Update the port number to match your local development server
 @baseUrl = http://localhost:63124
 @serviceUrl = {{baseUrl}}/AppointmentService.svc
 
-### 1. Get All Appointments
+### 1. Get All Appointments (with correlation headers)
 GET {{serviceUrl}}/appointments
+X-Correlation-Id: get-all-001
+X-Consumer-Id: http-test-client
+X-User-Id: tester@example.com
 Accept: application/json
 
 ###
 
-### 2. Get Specific Appointment by ID
+### 2. Get Specific Appointment by ID (with correlation headers)
 GET {{serviceUrl}}/appointments/1
+X-Correlation-Id: get-one-001
+X-Consumer-Id: http-test-client
+X-User-Id: tester@example.com
 Accept: application/json
 
 ###
 
 ### 3. Get Appointment by ID 2
 GET {{serviceUrl}}/appointments/2
+X-Correlation-Id: get-two-001
+X-Consumer-Id: http-test-client
+X-User-Id: tester@example.com
 Accept: application/json
 
 ###
 
-### 4. Create New Appointment - Basic
+### 4. Create New Appointment - With Headers
 POST {{serviceUrl}}/appointments
+X-Correlation-Id: create-001
+X-Consumer-Id: mobile-app
+X-User-Id: doctor@hospital.com
 Content-Type: application/json
 Accept: application/json
 
@@ -38,12 +50,14 @@ Accept: application/json
 
 ###
 
-### 5. Create New Appointment - Detailed
+### 5. Create New Appointment - With Body Parameters (No Headers)
 POST {{serviceUrl}}/appointments
 Content-Type: application/json
 Accept: application/json
 
 {
+  "ConsumerId": "web-portal",
+  "UserId": "admin@hospital.com",
   "Title": "Cardiology Appointment",
   "Description": "Annual heart health checkup and EKG",
   "AppointmentDate": "2024-12-25T14:30:00",
@@ -55,12 +69,17 @@ Accept: application/json
 
 ###
 
-### 6. Create New Appointment - Emergency
+### 6. Create New Appointment - Emergency (Both Headers and Body)
 POST {{serviceUrl}}/appointments
+X-Correlation-Id: emergency-001
+X-Consumer-Id: emergency-system
+X-User-Id: emergency@hospital.com
 Content-Type: application/json
 Accept: application/json
 
 {
+  "ConsumerId": "emergency-app",
+  "UserId": "er-doctor@hospital.com",
   "Title": "Emergency Consultation",
   "Description": "Urgent care visit for acute symptoms",
   "AppointmentDate": "2024-12-15T09:00:00",
@@ -74,6 +93,9 @@ Accept: application/json
 
 ### 7. Test Invalid Request - Missing Title (Should return Bad Request)
 POST {{serviceUrl}}/appointments
+X-Correlation-Id: error-test-001
+X-Consumer-Id: test-client
+X-User-Id: tester@example.com
 Content-Type: application/json
 Accept: application/json
 
@@ -90,6 +112,9 @@ Accept: application/json
 
 ### 8. Test Invalid Request - Missing Patient Name (Should return Bad Request)
 POST {{serviceUrl}}/appointments
+X-Correlation-Id: error-test2-001
+X-Consumer-Id: test-client
+X-User-Id: tester@example.com
 Content-Type: application/json
 Accept: application/json
 
@@ -106,7 +131,164 @@ Accept: application/json
 
 ### 9. Get Non-existent Appointment (Should return null or 404)
 GET {{serviceUrl}}/appointments/999
+X-Correlation-Id: not-found-001
+X-Consumer-Id: test-client
+X-User-Id: tester@example.com
 Accept: application/json
+
+###
+
+### 10. Test Sensitive Data Redaction
+POST {{serviceUrl}}/appointments
+X-Correlation-Id: security-test-001
+X-Consumer-Id: security-test
+X-User-Id: test@example.com
+X-API-Key: super-secret-key
+Content-Type: application/json
+Accept: application/json
+
+{
+  "Title": "Security Test",
+  "Description": "Testing sensitive data redaction",
+  "AppointmentDate": "2024-12-20T10:00:00",
+  "Location": "Room 303",
+  "PatientName": "Security Test",
+  "DoctorName": "Dr. Test",
+  "DurationMinutes": 30,
+  "password": "this-should-be-redacted",
+  "token": "also-redacted"
+}
+
+###
+
+### 11. Test Auto-Generated Correlation ID (No X-Correlation-Id header)
+POST {{serviceUrl}}/appointments
+X-Consumer-Id: auto-correlation-test
+X-User-Id: test@example.com
+Content-Type: application/json
+Accept: application/json
+
+{
+  "Title": "Auto Correlation Test",
+  "Description": "Testing auto-generated correlation ID",
+  "AppointmentDate": "2024-12-20T10:00:00",
+  "Location": "Room 401",
+  "PatientName": "Auto Test Patient",
+  "DoctorName": "Dr. Test",
+  "DurationMinutes": 30
+}
+
+###
+
+### 12. Create Appointment - Correlation IDs in Nested "header" Object
+POST {{serviceUrl}}/appointments
+Content-Type: application/json
+Accept: application/json
+
+{
+  "header": {
+    "CorrelationId": "nested-header-001",
+    "ConsumerId": "nested-consumer-app",
+    "UserId": "nested-user@example.com"
+  },
+  "Title": "Nested Header Test",
+  "Description": "Testing correlation IDs in nested header object",
+  "AppointmentDate": "2024-12-21T11:00:00",
+  "Location": "Room 501",
+  "PatientName": "Header Test Patient",
+  "DoctorName": "Dr. Header",
+  "DurationMinutes": 30
+}
+
+###
+
+### 13. Create Appointment - Correlation IDs in Nested "headers" Object (plural)
+POST {{serviceUrl}}/appointments
+Content-Type: application/json
+Accept: application/json
+
+{
+  "headers": {
+    "correlationId": "nested-headers-001",
+    "consumerId": "nested-headers-app",
+    "userId": "headers-user@example.com"
+  },
+  "Title": "Nested Headers Test",
+  "Description": "Testing correlation IDs in nested headers object (camelCase)",
+  "AppointmentDate": "2024-12-21T14:00:00",
+  "Location": "Room 502",
+  "PatientName": "Headers Test Patient",
+  "DoctorName": "Dr. Headers",
+  "DurationMinutes": 45
+}
+
+###
+
+### 14. Create Appointment - Mixed: Some in header object, some at root level
+POST {{serviceUrl}}/appointments
+Content-Type: application/json
+Accept: application/json
+
+{
+  "header": {
+    "CorrelationId": "mixed-header-001",
+    "ConsumerId": "mixed-consumer"
+  },
+  "UserId": "root-level-user@example.com",
+  "Title": "Mixed Levels Test",
+  "Description": "CorrelationId and ConsumerId in header object, UserId at root",
+  "AppointmentDate": "2024-12-22T09:00:00",
+  "Location": "Room 503",
+  "PatientName": "Mixed Test Patient",
+  "DoctorName": "Dr. Mixed",
+  "DurationMinutes": 30
+}
+
+###
+
+### 15. Create Appointment - Complete nested header with all fields
+POST {{serviceUrl}}/appointments
+Content-Type: application/json
+Accept: application/json
+
+{
+  "headers": {
+    "CorrelationId": "complete-nested-001",
+    "ConsumerId": "complete-consumer-app",
+    "UserId": "complete-user@example.com",
+    "RequestSource": "Mobile App",
+    "RequestVersion": "2.1.0"
+  },
+  "Title": "Complete Nested Header Test",
+  "Description": "Full header object with additional metadata",
+  "AppointmentDate": "2024-12-22T15:30:00",
+  "Location": "Room 504",
+  "PatientName": "Complete Test Patient",
+  "DoctorName": "Dr. Complete",
+  "DurationMinutes": 60
+}
+
+###
+
+### 16. Create Appointment - PascalCase nested header
+POST {{serviceUrl}}/appointments
+Content-Type: application/json
+Accept: application/json
+
+{
+  "Header": {
+    "CorrelationId": "pascalcase-001",
+    "ConsumerId": "pascal-consumer",
+    "UserId": "pascal-user@example.com"
+  },
+  "Title": "PascalCase Header Test",
+  "Description": "Testing with Header (PascalCase) object",
+  "AppointmentDate": "2024-12-23T10:00:00",
+  "Location": "Room 505",
+  "PatientName": "PascalCase Patient",
+  "DoctorName": "Dr. Pascal",
+  "DurationMinutes": 30
+}
 
 ###
 
@@ -118,10 +300,34 @@ Accept: application/json
 ### NOTES:
 ### 1. Update the @baseUrl variable with your actual development server URL and port
 ### 2. The service URL is: {baseUrl}/AppointmentService.svc
-### 3. Endpoints:
-###    - GET  /appointments      : Get all appointments
-###    - GET  /appointments/{id} : Get appointment by ID
-###    - POST /appointments      : Create new appointment
-### 4. To run tests:
-###    - Click "Send Request" above each request
-###    - Or use Ctrl+Alt+R (Windows) / Cmd+Alt+R (Mac) when cursor is on the request
+### 3. Correlation Headers - THREE ways to provide them:
+###    a) HTTP Headers: X-Correlation-Id, X-Consumer-Id, X-User-Id
+###    b) Root Level Body: ConsumerId, UserId, CorrelationId (as direct properties)
+###    c) Nested Header Object: Inside "header" or "headers" object in request body
+### 4. Extraction Priority:
+###    - HTTP Headers are checked first
+###    - If not found, checks root level of request body
+###    - If still not found, checks nested "header" or "headers" object
+###    - CorrelationId is auto-generated if not provided anywhere
+### 5. Supported nested object names (case-insensitive):
+###    - "header" or "Header"
+###    - "headers" or "Headers"
+### 6. Supported property names (case-insensitive):
+###    - CorrelationId or correlationId
+###    - ConsumerId or consumerId  
+###    - UserId or userId
+### 7. Check Visual Studio Output window (Debug) to see logged requests/responses
+### 8. All requests and responses are logged with correlation tracking
+### 9. Sensitive data (passwords, tokens, API keys) are automatically redacted
+### 10. To run tests:
+###     - Click "Send Request" above each request in Visual Studio
+###     - Response will appear in a new editor window
+### 11. Response will include X-Correlation-Id header for tracking
+### 12. NOTE: Visual Studio .http files don't support dynamic variables like $randomUUID
+###     Change the correlation IDs manually for each test, or they'll auto-generate if omitted
+
+### EXAMPLES SUMMARY:
+### Examples 1-3: HTTP Headers only
+### Examples 4-6: Various combinations
+### Examples 7-11: Testing error cases and features
+### Examples 12-16: NEW - Nested header object patterns (root level, HTTP headers, and nested combinations)

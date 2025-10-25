@@ -162,7 +162,10 @@
     <Compile Include="Global.asax.cs">
       <DependentUpon>Global.asax</DependentUpon>
     </Compile>
+    <Compile Include="Infrastructure\CorrelationContext.cs" />
+    <Compile Include="Infrastructure\RequestContext.cs" />
     <Compile Include="Models\Appointment.cs" />
+    <Compile Include="Modules\RequestResponseLoggingModule.cs" />
     <Compile Include="Properties\AssemblyInfo.cs" />
     <Compile Include="Services\AppointmentService.cs" />
     <Compile Include="Services\IAppointmentService.cs" />
@@ -215,6 +218,7 @@
     <Content Include="Areas\HelpPage\Views\Help\Api.cshtml" />
     <Content Include="AppointmentService.http" />
     <Content Include="APPOINTMENT_SERVICE_TESTING.md" />
+    <Content Include="LOGGING_MODULE_GUIDE.md" />
     <None Include="Scripts\jquery-3.7.0.intellisense.js" />
     <Content Include="Scripts\jquery-3.7.0.js" />
     <Content Include="Scripts\jquery-3.7.0.min.js" />
