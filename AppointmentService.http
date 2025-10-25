@@ -1,0 +1,127 @@
+### WCF Appointment Service REST API Tests
+### Base URL - Update the port number to match your local development server
+@baseUrl = http://localhost:63124
+@serviceUrl = {{baseUrl}}/AppointmentService.svc
+
+### 1. Get All Appointments
+GET {{serviceUrl}}/appointments
+Accept: application/json
+
+###
+
+### 2. Get Specific Appointment by ID
+GET {{serviceUrl}}/appointments/1
+Accept: application/json
+
+###
+
+### 3. Get Appointment by ID 2
+GET {{serviceUrl}}/appointments/2
+Accept: application/json
+
+###
+
+### 4. Create New Appointment - Basic
+POST {{serviceUrl}}/appointments
+Content-Type: application/json
+Accept: application/json
+
+{
+  "Title": "Follow-up Consultation",
+  "Description": "Follow-up appointment for test results review",
+  "AppointmentDate": "2024-12-20T10:00:00",
+  "Location": "Room 303",
+  "PatientName": "Michael Johnson",
+  "DoctorName": "Dr. Williams",
+  "DurationMinutes": 30
+}
+
+###
+
+### 5. Create New Appointment - Detailed
+POST {{serviceUrl}}/appointments
+Content-Type: application/json
+Accept: application/json
+
+{
+  "Title": "Cardiology Appointment",
+  "Description": "Annual heart health checkup and EKG",
+  "AppointmentDate": "2024-12-25T14:30:00",
+  "Location": "Cardiology Department - Room 501",
+  "PatientName": "Sarah Davis",
+  "DoctorName": "Dr. Anderson",
+  "DurationMinutes": 60
+}
+
+###
+
+### 6. Create New Appointment - Emergency
+POST {{serviceUrl}}/appointments
+Content-Type: application/json
+Accept: application/json
+
+{
+  "Title": "Emergency Consultation",
+  "Description": "Urgent care visit for acute symptoms",
+  "AppointmentDate": "2024-12-15T09:00:00",
+  "Location": "Emergency Room",
+  "PatientName": "Robert Brown",
+  "DoctorName": "Dr. Martinez",
+  "DurationMinutes": 45
+}
+
+###
+
+### 7. Test Invalid Request - Missing Title (Should return Bad Request)
+POST {{serviceUrl}}/appointments
+Content-Type: application/json
+Accept: application/json
+
+{
+  "Description": "This should fail - missing title",
+  "AppointmentDate": "2024-12-20T10:00:00",
+  "Location": "Room 303",
+  "PatientName": "Test Patient",
+  "DoctorName": "Dr. Test",
+  "DurationMinutes": 30
+}
+
+###
+
+### 8. Test Invalid Request - Missing Patient Name (Should return Bad Request)
+POST {{serviceUrl}}/appointments
+Content-Type: application/json
+Accept: application/json
+
+{
+  "Title": "Test Appointment",
+  "Description": "This should fail - missing patient name",
+  "AppointmentDate": "2024-12-20T10:00:00",
+  "Location": "Room 303",
+  "DoctorName": "Dr. Test",
+  "DurationMinutes": 30
+}
+
+###
+
+### 9. Get Non-existent Appointment (Should return null or 404)
+GET {{serviceUrl}}/appointments/999
+Accept: application/json
+
+###
+
+### Alternative: Using different port numbers (Update as needed)
+# @baseUrl = http://localhost:5000
+# @baseUrl = http://localhost:44300
+# @baseUrl = https://localhost:44300
+
+### NOTES:
+### 1. Update the @baseUrl variable with your actual development server URL and port
+### 2. The service URL is: {baseUrl}/AppointmentService.svc
+### 3. Endpoints:
+###    - GET  /appointments      : Get all appointments
+###    - GET  /appointments/{id} : Get appointment by ID
+###    - POST /appointments      : Create new appointment
+### 4. To run tests:
+###    - Click "Send Request" above each request
+###    - Or use Ctrl+Alt+R (Windows) / Cmd+Alt+R (Mac) when cursor is on the request

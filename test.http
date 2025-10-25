@@ -1,0 +1,29 @@
+### WCF Appointment Service REST API Tests
+@baseUrl = http://localhost:51234
+@serviceUrl = {{baseUrl}}/AppointmentService.svc
+
+### Get All Appointments
+GET {{serviceUrl}}/appointments
+Accept: application/json
+
+###
+
+### Get Specific Appointment by ID
+GET {{serviceUrl}}/appointments/1
+Accept: application/json
+
+###
+
+### Create New Appointment
+POST {{serviceUrl}}/appointments
+Content-Type: application/json
+
+{
+  "Title": "Follow-up Consultation",
+  "Description": "Follow-up appointment for test results review",
+  "AppointmentDate": "2024-12-20T10:00:00",
+  "Location": "Room 303",
+  "PatientName": "Michael Johnson",
+  "DoctorName": "Dr. Williams",
+  "DurationMinutes": 30
+}
