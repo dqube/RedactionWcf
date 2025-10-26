@@ -297,6 +297,189 @@ Accept: application/json
 # @baseUrl = http://localhost:44300
 # @baseUrl = https://localhost:44300
 
+###
+### ============================================================================
+### XML REQUEST EXAMPLES - Correlation Tracking Support (WCF Compatible)
+### ============================================================================
+### NOTE: All XML examples use proper WCF DataContract namespace
+###       Element names must match DataMember properties (PascalCase)
+###       camelCase XML will NOT work with WCF DataContractSerializer
+### ============================================================================
+
+### 17. XML Request - Root Level Correlation IDs
+POST {{serviceUrl}}/appointments
+Content-Type: application/xml
+Accept: application/xml
+
+<?xml version="1.0" encoding="utf-8"?>
+<Appointment xmlns="http://schemas.datacontract.org/2004/07/RedactionWcf.Models">
+  <AppointmentDate>2024-12-24T10:00:00</AppointmentDate>
+  <CorrelationId>xml-root-001</CorrelationId>
+  <ConsumerId>xml-consumer-app</ConsumerId>
+  <Description>Testing XML with root level correlation IDs</Description>
+  <DoctorName>Dr. XML</DoctorName>
+  <DurationMinutes>30</DurationMinutes>
+  <Location>Room 601</Location>
+  <PatientName>XML Test Patient</PatientName>
+  <Title>XML Root Level Test</Title>
+  <UserId>xml-user@example.com</UserId>
+</Appointment>
+
+###
+
+### 18. XML Request - Nested Header Element
+POST {{serviceUrl}}/appointments
+Content-Type: application/xml
+Accept: application/xml
+
+<?xml version="1.0" encoding="utf-8"?>
+<Appointment xmlns="http://schemas.datacontract.org/2004/07/RedactionWcf.Models">
+  <Header xmlns="http://schemas.datacontract.org/2004/07/">
+    <CorrelationId>xml-nested-001</CorrelationId>
+    <ConsumerId>xml-nested-consumer</ConsumerId>
+    <UserId>xml-nested-user@example.com</UserId>
+  </Header>
+  <AppointmentDate>2024-12-24T14:00:00</AppointmentDate>
+  <Description>Testing XML with nested Header element</Description>
+  <DoctorName>Dr. Nested</DoctorName>
+  <DurationMinutes>45</DurationMinutes>
+  <Location>Room 602</Location>
+  <PatientName>Nested XML Patient</PatientName>
+  <Title>XML Nested Header Test</Title>
+</Appointment>
+
+###
+
+### 19. XML Request - Nested Headers Element (Plural)
+POST {{serviceUrl}}/appointments
+Content-Type: application/xml
+Accept: application/xml
+
+<?xml version="1.0" encoding="utf-8"?>
+<Appointment xmlns="http://schemas.datacontract.org/2004/07/RedactionWcf.Models">
+  <Headers xmlns="http://schemas.datacontract.org/2004/07/">
+    <CorrelationId>xml-headers-001</CorrelationId>
+    <ConsumerId>xml-headers-consumer</ConsumerId>
+    <UserId>xml-headers-user@example.com</UserId>
+  </Headers>
+  <AppointmentDate>2024-12-24T16:00:00</AppointmentDate>
+  <Description>Testing XML with nested Headers element (plural)</Description>
+  <DoctorName>Dr. Headers</DoctorName>
+  <DurationMinutes>60</DurationMinutes>
+  <Location>Room 603</Location>
+  <PatientName>XML Headers Patient</PatientName>
+  <Title>XML Headers Test (Plural)</Title>
+</Appointment>
+
+###
+
+### 20. XML Request - HTTP Headers Override Body
+POST {{serviceUrl}}/appointments
+X-Correlation-Id: http-header-wins-xml-001
+X-Consumer-Id: http-header-consumer
+X-User-Id: http-header-user@example.com
+Content-Type: application/xml
+Accept: application/xml
+
+<?xml version="1.0" encoding="utf-8"?>
+<Appointment xmlns="http://schemas.datacontract.org/2004/07/RedactionWcf.Models">
+  <AppointmentDate>2024-12-25T11:00:00</AppointmentDate>
+  <CorrelationId>xml-body-ignored</CorrelationId>
+  <ConsumerId>xml-body-consumer-ignored</ConsumerId>
+  <Description>HTTP headers take priority over XML body</Description>
+  <DoctorName>Dr. Priority</DoctorName>
+  <DurationMinutes>30</DurationMinutes>
+  <Location>Room 605</Location>
+  <PatientName>Priority Test Patient</PatientName>
+  <Title>XML Priority Test</Title>
+  <UserId>xml-body-user-ignored</UserId>
+</Appointment>
+
+###
+
+### 21. XML Request - Mixed: Some in nested header, some at root level
+POST {{serviceUrl}}/appointments
+Content-Type: application/xml
+Accept: application/xml
+
+<?xml version="1.0" encoding="utf-8"?>
+<Appointment xmlns="http://schemas.datacontract.org/2004/07/RedactionWcf.Models">
+  <Header xmlns="http://schemas.datacontract.org/2004/07/">
+    <CorrelationId>xml-mixed-001</CorrelationId>
+    <ConsumerId>xml-mixed-consumer</ConsumerId>
+  </Header>
+  <AppointmentDate>2024-12-25T13:00:00</AppointmentDate>
+  <Description>CorrelationId and ConsumerId in Header, UserId at root</Description>
+  <DoctorName>Dr. Mixed</DoctorName>
+  <DurationMinutes>45</DurationMinutes>
+  <Location>Room 606</Location>
+  <PatientName>Mixed XML Patient</PatientName>
+  <Title>XML Mixed Levels Test</Title>
+  <UserId>xml-root-user@example.com</UserId>
+</Appointment>
+
+###
+
+### 22. XML Request - No Correlation IDs (Auto-generate)
+POST {{serviceUrl}}/appointments
+Content-Type: application/xml
+Accept: application/xml
+
+<?xml version="1.0" encoding="utf-8"?>
+<Appointment xmlns="http://schemas.datacontract.org/2004/07/RedactionWcf.Models">
+  <AppointmentDate>2024-12-25T15:00:00</AppointmentDate>
+  <Description>Testing auto-generated correlation ID for XML</Description>
+  <DoctorName>Dr. Auto</DoctorName>
+  <DurationMinutes>30</DurationMinutes>
+  <Location>Room 607</Location>
+  <PatientName>Auto XML Patient</PatientName>
+  <Title>XML Auto Correlation Test</Title>
+</Appointment>
+
+###
+
+### 23. XML Request - Complete nested headers with extra metadata
+POST {{serviceUrl}}/appointments
+Content-Type: application/xml
+Accept: application/xml
+
+<?xml version="1.0" encoding="utf-8"?>
+<Appointment xmlns="http://schemas.datacontract.org/2004/07/RedactionWcf.Models">
+  <Headers xmlns="http://schemas.datacontract.org/2004/07/">
+    <CorrelationId>xml-complete-001</CorrelationId>
+    <ConsumerId>xml-complete-consumer</ConsumerId>
+    <UserId>xml-complete-user@example.com</UserId>
+    <RequestSource>XML Legacy System</RequestSource>
+    <RequestVersion>1.0.0</RequestVersion>
+  </Headers>
+  <AppointmentDate>2024-12-26T10:00:00</AppointmentDate>
+  <Description>Full XML headers with additional metadata</Description>
+  <DoctorName>Dr. Complete</DoctorName>
+  <DurationMinutes>60</DurationMinutes>
+  <Location>Room 608</Location>
+  <PatientName>Complete XML Patient</PatientName>
+  <Title>XML Complete Headers Test</Title>
+</Appointment>
+
+###
+
+### 24. XML Request - Minimal Required Fields Only
+POST {{serviceUrl}}/appointments
+Content-Type: application/xml
+Accept: application/xml
+
+<?xml version="1.0" encoding="utf-8"?>
+<Appointment xmlns="http://schemas.datacontract.org/2004/07/RedactionWcf.Models">
+  <AppointmentDate>2024-12-26T14:00:00</AppointmentDate>
+  <DoctorName>Dr. Minimal</DoctorName>
+  <DurationMinutes>30</DurationMinutes>
+  <Location>Room 609</Location>
+  <PatientName>Minimal XML Patient</PatientName>
+  <Title>XML Minimal Test</Title>
+</Appointment>
+
+###
+
 ### NOTES:
 ### 1. Update the @baseUrl variable with your actual development server URL and port
 ### 2. The service URL is: {baseUrl}/AppointmentService.svc
@@ -309,25 +492,43 @@ Accept: application/json
 ###    - If not found, checks root level of request body
 ###    - If still not found, checks nested "header" or "headers" object
 ###    - CorrelationId is auto-generated if not provided anywhere
-### 5. Supported nested object names (case-insensitive):
-###    - "header" or "Header"
-###    - "headers" or "Headers"
-### 6. Supported property names (case-insensitive):
+### 5. Supported Content Types:
+###    - JSON: application/json (fully flexible)
+###    - XML: application/xml or text/xml (must use WCF namespace and PascalCase)
+### 6. XML Requirements (WCF DataContractSerializer):
+###    - Must include namespace: xmlns="http://schemas.datacontract.org/2004/07/RedactionWcf.Models"
+###    - Element names must match DataMember properties EXACTLY (PascalCase)
+###    - Elements are serialized in ALPHABETICAL order by WCF
+###    - camelCase XML will NOT work without additional configuration
+### 7. Supported nested object/element names (case-insensitive for extraction):
+###    JSON: "header" or "Header", "headers" or "Headers"
+###    XML: <Header>, <Headers> (must be PascalCase for WCF)
+### 8. Supported property/element names (case-insensitive for extraction):
 ###    - CorrelationId or correlationId
 ###    - ConsumerId or consumerId  
 ###    - UserId or userId
-### 7. Check Visual Studio Output window (Debug) to see logged requests/responses
-### 8. All requests and responses are logged with correlation tracking
-### 9. Sensitive data (passwords, tokens, API keys) are automatically redacted
-### 10. To run tests:
+### 9. Check Visual Studio Output window (Debug) to see logged requests/responses
+### 10. All requests and responses are logged with correlation tracking
+### 11. Sensitive data (passwords, tokens, API keys) are automatically redacted
+### 12. To run tests:
 ###     - Click "Send Request" above each request in Visual Studio
 ###     - Response will appear in a new editor window
-### 11. Response will include X-Correlation-Id header for tracking
-### 12. NOTE: Visual Studio .http files don't support dynamic variables like $randomUUID
-###     Change the correlation IDs manually for each test, or they'll auto-generate if omitted
+### 13. Response will include X-Correlation-Id header for tracking
 
 ### EXAMPLES SUMMARY:
-### Examples 1-3: HTTP Headers only
-### Examples 4-6: Various combinations
-### Examples 7-11: Testing error cases and features
-### Examples 12-16: NEW - Nested header object patterns (root level, HTTP headers, and nested combinations)
+### Examples 1-3: HTTP Headers only (JSON)
+### Examples 4-6: Various combinations (JSON)
+### Examples 7-11: Testing error cases and features (JSON)
+### Examples 12-16: Nested header object patterns (JSON)
+### Examples 17-24: XML Request Examples (WCF Compatible)
+###    - Example 17: Root level correlation IDs in XML
+###    - Example 18: Nested <Header> element
+###    - Example 19: Nested <Headers> element (Plural)
+###    - Example 20: HTTP headers override XML body
+###    - Example 21: Mixed levels (some nested, some root)
+###    - Example 22: Auto-generated correlation ID
+###    - Example 23: Complete headers with metadata
+###    - Example 24: Minimal required fields only
+
+### IMPORTANT: XML elements are shown in alphabetical order (WCF requirement)
+### The logging module will extract correlation IDs regardless of element order

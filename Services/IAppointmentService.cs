@@ -21,7 +21,7 @@ namespace RedactionWcf.Services
         Appointment GetAppointment(string id);
 
         [OperationContract]
-        [WebInvoke(Method = "POST", UriTemplate = "/appointments", RequestFormat = WebMessageFormat.Json, ResponseFormat = WebMessageFormat.Json)]
+        [WebInvoke(Method = "POST", UriTemplate = "/appointments")]
         Appointment CreateAppointment(Appointment appointment);
     }
 }
