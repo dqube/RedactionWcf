@@ -221,6 +221,7 @@
     <Content Include="AppointmentService.http" />
     <Content Include="APPOINTMENT_SERVICE_TESTING.md" />
     <Content Include="LOGGING_MODULE_GUIDE.md" />
+    <Content Include="ValueService.http" />
     <None Include="Scripts\jquery-3.7.0.intellisense.js" />
     <Content Include="Scripts\jquery-3.7.0.js" />
     <Content Include="Scripts\jquery-3.7.0.min.js" />

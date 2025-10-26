@@ -9,7 +9,6 @@ using System.ServiceModel.Dispatcher;
 using System.Text;
 using System.Text.RegularExpressions;
 using System.Web;
-using System.Diagnostics;
 using System.Xml;
 
 namespace RedactionWcf.Infrastructure
@@ -22,8 +21,6 @@ namespace RedactionWcf.Infrastructure
             {
                 if (HttpContext.Current != null && request != null)
                 {
-                    Debug.WriteLine("[WCF Inspector] AfterReceiveRequest - Starting request capture");
-                    
                     var buffer = request.CreateBufferedCopy(Int32.MaxValue);
                     request = buffer.CreateMessage();
                     var copy = buffer.CreateMessage();
@@ -37,20 +34,18 @@ namespace RedactionWcf.Infrastructure
                         using (var reader = new StreamReader(ms, Encoding.UTF8))
                         {
                             var body = reader.ReadToEnd();
-                            
+
                             // Extract JSON content from the message if it's wrapped
                             var extractedBody = ExtractJsonFromMessage(body);
-                            
+
                             HttpContext.Current.Items["WCF_RequestBody"] = extractedBody ?? body;
-                            Debug.WriteLine($"[WCF Inspector] Captured request - Length: {body?.Length ?? 0}, Extracted: {extractedBody?.Length ?? 0}");
                         }
                     }
                 }
             }
             catch (Exception ex)
             {
-                Debug.WriteLine($"[WCF Inspector] Error capturing request: {ex.Message}");
-                Debug.WriteLine($"[WCF Inspector] Stack: {ex.StackTrace}");
+                // Suppress errors to prevent disrupting the request pipeline
             }
             return null;
         }
@@ -61,8 +56,6 @@ namespace RedactionWcf.Infrastructure
             {
                 if (HttpContext.Current != null && reply != null)
                 {
-                    Debug.WriteLine("[WCF Inspector] BeforeSendReply - Starting response capture");
-                    
                     var buffer = reply.CreateBufferedCopy(Int32.MaxValue);
                     reply = buffer.CreateMessage();
                     var copy = buffer.CreateMessage();
@@ -76,21 +69,18 @@ namespace RedactionWcf.Infrastructure
                         using (var reader = new StreamReader(ms, Encoding.UTF8))
                         {
                             var body = reader.ReadToEnd();
-                            
+
                             // Extract JSON content from the message if it's wrapped
                             var extractedBody = ExtractJsonFromMessage(body);
-                            
+
                             HttpContext.Current.Items["WCF_ResponseBody"] = extractedBody ?? body;
-                            Debug.WriteLine($"[WCF Inspector] Captured response - Length: {body?.Length ?? 0}, Extracted: {extractedBody?.Length ?? 0}");
-                            Debug.WriteLine($"[WCF Inspector] Response preview: {(extractedBody ?? body)?.Substring(0, Math.Min(200, (extractedBody ?? body)?.Length ?? 0))}");
                         }
                     }
                 }
             }
             catch (Exception ex)
             {
-                Debug.WriteLine($"[WCF Inspector] Error capturing response: {ex.Message}");
-                Debug.WriteLine($"[WCF Inspector] Stack: {ex.StackTrace}");
+                // Suppress errors to prevent disrupting the response pipeline
             }
         }
 
@@ -113,7 +103,6 @@ namespace RedactionWcf.Infrastructure
                 }
 
                 // Pattern 2: Look for JSON array pattern [...]
-
                 var arrayMatch = Regex.Match(xmlMessage, @"\[[\s\S]*\]", RegexOptions.Multiline);
                 if (arrayMatch.Success)
                 {
@@ -125,7 +114,6 @@ namespace RedactionWcf.Infrastructure
             }
             catch (Exception ex)
             {
-                Debug.WriteLine($"[WCF Inspector] Error extracting JSON: {ex.Message}");
                 return null;
             }
         }
@@ -138,7 +126,6 @@ namespace RedactionWcf.Infrastructure
         public void ApplyDispatchBehavior(ServiceEndpoint endpoint, EndpointDispatcher endpointDispatcher)
         {
             endpointDispatcher.DispatchRuntime.MessageInspectors.Add(new WcfLoggingInspector());
-            Debug.WriteLine($"[WCF Behavior] Added message inspector to endpoint: {endpoint.Address}");
         }
         public void Validate(ServiceEndpoint endpoint) { }
     }
@@ -156,21 +143,17 @@ namespace RedactionWcf.Infrastructure
     {
         protected override ServiceHost CreateServiceHost(Type serviceType, Uri[] baseAddresses)
         {
-            Debug.WriteLine($"[ServiceHostFactory] Creating service host for {serviceType.Name}");
-            
             var host = base.CreateServiceHost(serviceType, baseAddresses);
-            
+
             // Add the logging behavior to all endpoints when the host opens
             host.Opening += (sender, args) =>
             {
-                Debug.WriteLine($"[ServiceHostFactory] Service host opening, adding behaviors...");
                 foreach (var endpoint in host.Description.Endpoints)
                 {
                     endpoint.EndpointBehaviors.Add(new WcfLoggingBehavior());
-                    Debug.WriteLine($"[ServiceHostFactory] Added logging behavior to endpoint: {endpoint.Address}");
                 }
             };
-            
+
             return host;
         }
     }

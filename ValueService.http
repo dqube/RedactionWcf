@@ -1,0 +1,276 @@
+### Web API Values Controller REST API Tests with Correlation Tracking
+### Base URL - Update the port number to match your local development server
+@baseUrl = http://localhost:63124
+@serviceUrl = {{baseUrl}}/api/values
+
+### 1. Get All Values (with correlation headers)
+GET {{serviceUrl}}
+X-Correlation-Id: get-all-values-001
+X-Consumer-Id: http-test-client
+X-User-Id: tester@example.com
+Accept: application/json
+
+###
+
+### 2. Get Specific Value by ID (with correlation headers)
+GET {{serviceUrl}}/5
+X-Correlation-Id: get-one-value-001
+X-Consumer-Id: http-test-client
+X-User-Id: tester@example.com
+Accept: application/json
+
+###
+
+### 3. Get Value by ID 10
+GET {{serviceUrl}}/10
+X-Correlation-Id: get-value-10-001
+X-Consumer-Id: http-test-client
+X-User-Id: tester@example.com
+Accept: application/json
+
+###
+
+### 4. POST New Value - With Headers
+POST {{serviceUrl}}
+X-Correlation-Id: post-value-001
+X-Consumer-Id: mobile-app
+X-User-Id: developer@example.com
+Content-Type: application/json
+Accept: application/json
+
+"Test Value with Headers"
+
+###
+
+### 5. POST New Value - With Body Parameters (No Headers)
+POST {{serviceUrl}}
+Content-Type: application/json
+Accept: application/json
+
+{
+  "ConsumerId": "web-portal",
+  "UserId": "admin@example.com",
+  "value": "Test Value with Body IDs"
+}
+
+###
+
+### 6. POST New Value - With Nested Headers
+POST {{serviceUrl}}
+Content-Type: application/json
+Accept: application/json
+
+{
+  "header": {
+    "CorrelationId": "nested-post-001",
+    "ConsumerId": "nested-consumer-app",
+    "UserId": "nested-user@example.com"
+  },
+  "value": "Test Value with Nested Headers"
+}
+
+###
+
+### 7. PUT Update Value by ID - With Headers
+PUT {{serviceUrl}}/5
+X-Correlation-Id: put-value-001
+X-Consumer-Id: mobile-app
+X-User-Id: developer@example.com
+Content-Type: application/json
+Accept: application/json
+
+"Updated Value"
+
+###
+
+### 8. PUT Update Value - With Body Parameters
+PUT {{serviceUrl}}/10
+Content-Type: application/json
+Accept: application/json
+
+{
+  "ConsumerId": "web-portal",
+  "UserId": "admin@example.com",
+  "value": "Updated Value with IDs"
+}
+
+###
+
+### 9. DELETE Value by ID - With Headers
+DELETE {{serviceUrl}}/5
+X-Correlation-Id: delete-value-001
+X-Consumer-Id: mobile-app
+X-User-Id: developer@example.com
+Accept: application/json
+
+###
+
+### 10. DELETE Value - Auto-Generated Correlation ID
+DELETE {{serviceUrl}}/10
+X-Consumer-Id: test-client
+X-User-Id: tester@example.com
+Accept: application/json
+
+###
+
+### 11. Test Sensitive Data Redaction in POST
+POST {{serviceUrl}}
+X-Correlation-Id: security-test-001
+X-Consumer-Id: security-test
+X-User-Id: test@example.com
+X-API-Key: super-secret-key
+Content-Type: application/json
+Accept: application/json
+
+{
+  "value": "Test Value",
+  "password": "this-should-be-redacted",
+  "token": "also-redacted",
+  "secret": "hidden-data"
+}
+
+###
+
+### 12. Test Auto-Generated Correlation ID (No X-Correlation-Id header)
+GET {{serviceUrl}}
+X-Consumer-Id: auto-correlation-test
+X-User-Id: test@example.com
+Accept: application/json
+
+###
+
+### 13. POST with Nested Headers Object (Plural)
+POST {{serviceUrl}}
+Content-Type: application/json
+Accept: application/json
+
+{
+  "headers": {
+    "correlationId": "nested-headers-post-001",
+    "consumerId": "nested-headers-app",
+    "userId": "headers-user@example.com"
+  },
+  "value": "Test with Headers Object"
+}
+
+###
+
+### 14. PUT with Mixed Headers (Some in header object, some at root)
+PUT {{serviceUrl}}/15
+Content-Type: application/json
+Accept: application/json
+
+{
+  "header": {
+    "CorrelationId": "mixed-put-001",
+    "ConsumerId": "mixed-consumer"
+  },
+  "UserId": "root-level-user@example.com",
+  "value": "Mixed Headers Update"
+}
+
+###
+
+### 15. POST with Complete Nested Headers
+POST {{serviceUrl}}
+Content-Type: application/json
+Accept: application/json
+
+{
+  "headers": {
+    "CorrelationId": "complete-post-001",
+    "ConsumerId": "complete-consumer-app",
+    "UserId": "complete-user@example.com",
+    "RequestSource": "Web Portal",
+    "RequestVersion": "2.0.0"
+  },
+  "value": "Complete Headers Test"
+}
+
+###
+
+### 16. GET with PascalCase Correlation Headers
+GET {{serviceUrl}}/20
+X-Correlation-Id: pascalcase-get-001
+X-Consumer-Id: pascal-consumer
+X-User-Id: pascal-user@example.com
+Accept: application/json
+
+###
+
+### Alternative: Using different port numbers (Update as needed)
+# @baseUrl = http://localhost:5000
+# @baseUrl = http://localhost:44300
+# @baseUrl = https://localhost:44300
+
+###
+
+### NOTES:
+### 1. Update the @baseUrl variable with your actual development server URL and port
+### 2. The service URL is: {baseUrl}/api/values
+### 3. ValuesController Methods:
+###    - GET /api/values - Returns array ["value1", "value2"]
+###    - GET /api/values/{id} - Returns "value" string
+###    - POST /api/values - Accepts string value from body
+###    - PUT /api/values/{id} - Accepts string value from body
+###    - DELETE /api/values/{id} - Deletes value by ID
+### 4. Correlation Headers - THREE ways to provide them:
+###    a) HTTP Headers: X-Correlation-Id, X-Consumer-Id, X-User-Id
+###    b) Root Level Body: ConsumerId, UserId, CorrelationId (as direct properties)
+###    c) Nested Header Object: Inside "header" or "headers" object in request body
+### 5. Extraction Priority:
+###    - HTTP Headers are checked first
+###    - If not found, checks root level of request body
+###    - If still not found, checks nested "header" or "headers" object
+###    - CorrelationId is auto-generated if not provided anywhere
+### 6. Supported Content Types:
+###    - JSON: application/json
+###    - XML: application/xml or text/xml
+### 7. Logging Output:
+###    - Check Visual Studio Output window (Debug) to see logged requests/responses
+###    - Request path will be parsed to show:
+###      * ClassName: "values" (controller name)
+###      * OperationName: Action method name or ID
+### 8. All requests and responses are logged with correlation tracking
+### 9. Sensitive data (passwords, tokens, API keys) are automatically redacted
+### 10. To run tests:
+###     - Click "Send Request" above each request in Visual Studio
+###     - Response will appear in a new editor window
+### 11. Response will include X-Correlation-Id header for tracking
+
+### EXAMPLES SUMMARY:
+### Examples 1-3: GET requests with correlation headers
+### Examples 4-6: POST requests with different header patterns
+### Examples 7-8: PUT requests with headers and body IDs
+### Examples 9-10: DELETE requests with correlation tracking
+### Examples 11-16: Testing various correlation ID patterns and security features
+
+### EXPECTED RESPONSES:
+### GET /api/values => ["value1", "value2"]
+### GET /api/values/5 => "value"
+### POST /api/values => No content (void)
+### PUT /api/values/5 => No content (void)
+### DELETE /api/values/5 => No content (void)
+
+### LOGGING EXAMPLE:
+### Request to GET /api/values will log:
+### {
+###   "Request": {
+###     "Path": "/api/values",
+###     "ClassName": "values",
+###     "OperationName": null,
+###     "Method": "GET",
+###     ...
+###   }
+### }
+###
+### Request to GET /api/values/5 will log:
+### {
+###   "Request": {
+###     "Path": "/api/values/5",
+###     "ClassName": "values",
+###     "OperationName": "5",
+###     "Method": "GET",
+###     ...
+###   }
+### }

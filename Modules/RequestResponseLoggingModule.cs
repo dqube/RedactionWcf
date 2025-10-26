@@ -1,13 +1,12 @@
+using Newtonsoft.Json;
+using Newtonsoft.Json.Linq;
 using System;
+using System.Diagnostics;
 using System.IO;
 using System.Linq;
 using System.Text;
 using System.Web;
-using System.Diagnostics;
 using System.Xml.Linq;
-using Newtonsoft.Json;
-using Newtonsoft.Json.Linq;
-using System.ServiceModel.Channels;
 
 namespace RedactionWcf.Modules
 {
@@ -73,11 +72,9 @@ namespace RedactionWcf.Modules
                 // Skip logging for HTML pages, static resources, and landing pages
                 if (ShouldSkipLogging(request))
                 {
-                    Debug.WriteLine($"Skipping logging for: {request.RawUrl}");
                     return;
                 }
 
-                Debug.WriteLine($"Processing logging for: {request.RawUrl}");
 
                 // Extract correlation information from headers first
                 string correlationId = GetHeaderValueWithFallback(request, CorrelationIdHeaders);
@@ -278,16 +275,23 @@ namespace RedactionWcf.Modules
                         requestContext.UserId = usrId;
                     }
 
+                    // Parse ClassName and OperationName from path
+                    string className = null;
+                    string operationName = null;
+                    ParseClassAndOperationName(context.Request.RawUrl, out className, out operationName);
+
                     // Capture request details
                     var requestInfo = new RequestInfo
                     {
                         Timestamp = requestContext.RequestTime,
                         Method = context.Request.HttpMethod,
                         Path = context.Request.RawUrl,
+                        ClassName = className,
+                        OperationName = operationName,
                         QueryString = context.Request.QueryString.ToString(),
                         ContentType = context.Request.ContentType,
-                        Headers = GetSafeHeaders(context.Request.Headers),
-                        Body = SanitizeBody(requestBody)
+                        Headers = context.Request.Headers,
+                        Body = requestBody
                     };
 
                     requestContext.RequestInfo = requestInfo;
@@ -295,10 +299,6 @@ namespace RedactionWcf.Modules
                     // Get response body - try multiple sources with detailed logging
                     string responseBody = null;
                     
-                    Debug.WriteLine($"[OnEndRequest] Checking for response body in context.Items...");
-                    Debug.WriteLine($"[OnEndRequest] CapturedResponseBody exists: {context.Items.Contains("CapturedResponseBody")}");
-                    Debug.WriteLine($"[OnEndRequest] ResponseFilter exists: {context.Items.Contains("ResponseFilter")}");
-                    Debug.WriteLine($"[OnEndRequest] WCF_ResponseBody exists: {context.Items.Contains("WCF_ResponseBody")}");
                     
                     // First, check if WCF inspector captured it
                     if (context.Items["WCF_ResponseBody"] is string wcfResponseBody)
@@ -330,8 +330,8 @@ namespace RedactionWcf.Modules
                         StatusCode = response.StatusCode,
                         StatusDescription = response.StatusDescription,
                         ContentType = response.ContentType,
-                        Headers = GetSafeHeaders(response.Headers),
-                        Body = SanitizeBody(responseBody)
+                        Headers = response.Headers,
+                        Body = responseBody
                     };
 
                     Debug.WriteLine($"Request/Response captured - StatusCode: {response.StatusCode}, Request Body Length: {requestBody?.Length ?? 0}, Response Body Length: {responseBody?.Length ?? 0}");
@@ -379,8 +379,8 @@ namespace RedactionWcf.Modules
                             Path = context.Request.RawUrl,
                             QueryString = context.Request.QueryString.ToString(),
                             ContentType = context.Request.ContentType,
-                            Headers = GetSafeHeaders(context.Request.Headers),
-                            Body = SanitizeBody(requestBody)
+                            Headers =   context.Request.Headers,
+                            Body = requestBody
                         };
                     }
 
@@ -391,6 +391,75 @@ namespace RedactionWcf.Modules
             {
                 Trace.TraceError($"Error in RequestResponseLoggingModule.OnError: {ex}");
                 Debug.WriteLine($"ERROR in OnError: {ex}");
+            }
+        }
+
+        /// <summary>
+        /// Extracts ClassName and OperationName from the request path
+        /// For WCF: /ServiceName.svc/operation => ClassName=ServiceName, OperationName=operation
+        /// For Web API: /api/controller/action => ClassName=controller, OperationName=action
+        /// </summary>
+        private void ParseClassAndOperationName(string path, out string className, out string operationName)
+        {
+            className = null;
+            operationName = null;
+
+            try
+            {
+                if (string.IsNullOrEmpty(path))
+                    return;
+
+                // Remove query string if present
+                var pathWithoutQuery = path.Split('?')[0];
+                
+                // Split path into segments
+                var segments = pathWithoutQuery.Split(new[] { '/' }, StringSplitOptions.RemoveEmptyEntries);
+
+                if (segments.Length == 0)
+                    return;
+
+                // Handle WCF service path: /ServiceName.svc/operation
+                if (pathWithoutQuery.Contains(".svc"))
+                {
+                    for (int i = 0; i < segments.Length; i++)
+                    {
+                        if (segments[i].EndsWith(".svc", StringComparison.OrdinalIgnoreCase))
+                        {
+                            // Extract service name without .svc extension
+                            className = segments[i].Substring(0, segments[i].Length - 4);
+                            
+                            // Operation name is the next segment
+                            if (i + 1 < segments.Length)
+                            {
+                                operationName = segments[i + 1];
+                            }
+                            break;
+                        }
+                    }
+                }
+                // Handle Web API path: /api/controller/action
+                else if (pathWithoutQuery.ToLowerInvariant().StartsWith("/api/"))
+                {
+                    // segments[0] = "api", segments[1] = controller, segments[2] = action
+                    if (segments.Length >= 2)
+                    {
+                        className = segments[1]; // controller name
+                    }
+                    if (segments.Length >= 3)
+                    {
+                        operationName = segments[2]; // action name
+                    }
+                }
+                // Handle generic controller/action pattern
+                else if (segments.Length >= 2)
+                {
+                    className = segments[0];
+                    operationName = segments[1];
+                }
+            }
+            catch (Exception ex)
+            {
+                Debug.WriteLine($"Error parsing class and operation name from path '{path}': {ex.Message}");
             }
         }
 
@@ -649,11 +718,9 @@ namespace RedactionWcf.Modules
                 CorrelationId = context.CorrelationId,
                 ConsumerId = context.ConsumerId,
                 UserId = context.UserId,
-                Duration = new
-                {
-                    TotalMilliseconds = duration.TotalMilliseconds,
-                    Seconds = duration.TotalSeconds
-                },
+                ClassName = context.RequestInfo.ClassName,
+                OperationName = context.RequestInfo.OperationName,
+                ExecutionTime = duration.TotalMilliseconds,               
                 Request = new
                 {
                     Timestamp = context.RequestInfo.Timestamp,
@@ -697,11 +764,7 @@ namespace RedactionWcf.Modules
                 CorrelationId = context.CorrelationId,
                 ConsumerId = context.ConsumerId,
                 UserId = context.UserId,
-                Duration = new
-                {
-                    TotalMilliseconds = duration.TotalMilliseconds,
-                    Seconds = duration.TotalSeconds
-                },
+                ExecutionTime = duration.TotalMilliseconds,               
                 Request = new
                 {
                     Timestamp = context.RequestInfo.Timestamp,
@@ -727,62 +790,11 @@ namespace RedactionWcf.Modules
             // Log to trace
             Trace.TraceError(logMessage);
 
-            // Also log to Debug for development
-            Debug.WriteLine("=== ERROR LOG ===");
-            Debug.WriteLine(logMessage);
-            Debug.WriteLine("=================");
+           
         }
 
-        private object GetSafeHeaders(System.Collections.Specialized.NameValueCollection headers)
-        {
-            var safeHeaders = new System.Collections.Generic.Dictionary<string, string>();
-            var sensitiveHeaders = new[] { "Authorization", "Cookie", "Set-Cookie", "X-API-Key" };
-
-            foreach (string key in headers.AllKeys)
-            {
-                if (key != null)
-                {
-                    if (Array.IndexOf(sensitiveHeaders, key) >= 0)
-                    {
-                        safeHeaders[key] = "***REDACTED***";
-                    }
-                    else
-                    {
-                        safeHeaders[key] = headers[key];
-                    }
-                }
-            }
-
-            return safeHeaders;
-        }
-
-        private string SanitizeBody(string body)
-        {
-            if (string.IsNullOrEmpty(body))
-                return body;
-
-            try
-            {
-                // Attempt to parse as JSON and redact sensitive fields
-                var jsonObject = JObject.Parse(body);
-                var sensitiveFields = new[] { "password", "Password", "token", "Token", "secret", "Secret", "apiKey", "ApiKey" };
-
-                foreach (var field in sensitiveFields)
-                {
-                    if (jsonObject[field] != null)
-                    {
-                        jsonObject[field] = "***REDACTED***";
-                    }
-                }
-
-                return jsonObject.ToString(Formatting.None);
-            }
-            catch
-            {
-                // If not JSON or parsing fails, return as is (or truncate if too large)
-                return body.Length > 10000 ? body.Substring(0, 10000) + "... [TRUNCATED]" : body;
-            }
-        }
+      
+     
 
         public void Dispose()
         {
@@ -1009,6 +1021,8 @@ namespace RedactionWcf.Modules
             public DateTime Timestamp { get; set; }
             public string Method { get; set; }
             public string Path { get; set; }
+            public string ClassName { get; set; }
+            public string OperationName { get; set; }
             public string QueryString { get; set; }
             public string ContentType { get; set; }
             public object Headers { get; set; }
