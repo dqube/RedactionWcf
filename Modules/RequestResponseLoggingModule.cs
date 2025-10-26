@@ -733,7 +733,7 @@ namespace RedactionWcf.Modules
                 ConsumerId = context.ConsumerId,
                 UserId = context.UserId,
                 ClassName = context.RequestInfo.ClassName,
-                OperationName = context.RequestInfo.OperationName,
+                OperationName = context.RequestInfo.OperationName ?? context.RequestInfo.ClassName,
                 ExecutionTime = duration.TotalMilliseconds,               
                 Request = new
                 {
@@ -778,6 +778,8 @@ namespace RedactionWcf.Modules
                 CorrelationId = context.CorrelationId,
                 ConsumerId = context.ConsumerId,
                 UserId = context.UserId,
+                ClassName = context.RequestInfo.ClassName,
+                OperationName = context.RequestInfo.OperationName ?? context.RequestInfo.ClassName,
                 ExecutionTime = duration.TotalMilliseconds,               
                 Request = new
                 {
