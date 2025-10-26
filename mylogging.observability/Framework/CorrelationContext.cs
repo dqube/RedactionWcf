@@ -1,7 +1,8 @@
+#if NET48_OR_GREATER
 using System;
 using System.Web;
 
-namespace RedactionWcf.Infrastructure
+namespace mylogging.observability.Framework
 {
     /// <summary>
     /// Helper class to access correlation context from both WCF services and Web API controllers
@@ -17,7 +18,7 @@ namespace RedactionWcf.Infrastructure
         /// <summary>
         /// Get the correlation ID for the current request
         /// </summary>
-        public static string CorrelationId
+        public static string? CorrelationId
         {
             get { return HttpContext.Current?.Items[CorrelationIdKey]?.ToString(); }
         }
@@ -25,7 +26,7 @@ namespace RedactionWcf.Infrastructure
         /// <summary>
         /// Get the consumer ID for the current request
         /// </summary>
-        public static string ConsumerId
+        public static string? ConsumerId
         {
             get { return HttpContext.Current?.Items[ConsumerIdKey]?.ToString(); }
         }
@@ -33,7 +34,7 @@ namespace RedactionWcf.Infrastructure
         /// <summary>
         /// Get the user ID for the current request
         /// </summary>
-        public static string UserId
+        public static string? UserId
         {
             get { return HttpContext.Current?.Items[UserIdKey]?.ToString(); }
         }
@@ -41,7 +42,7 @@ namespace RedactionWcf.Infrastructure
         /// <summary>
         /// Get the class name (service/controller name) for the current request
         /// </summary>
-        public static string ClassName
+        public static string? ClassName
         {
             get { return HttpContext.Current?.Items[ClassNameKey]?.ToString(); }
         }
@@ -49,7 +50,7 @@ namespace RedactionWcf.Infrastructure
         /// <summary>
         /// Get the operation name (method/action name) for the current request
         /// </summary>
-        public static string OperationName
+        public static string? OperationName
         {
             get { return HttpContext.Current?.Items[OperationNameKey]?.ToString(); }
         }
@@ -74,3 +75,4 @@ namespace RedactionWcf.Infrastructure
         }
     }
 }
+#endif

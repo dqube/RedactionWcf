@@ -1,3 +1,4 @@
+using mylogging.observability.Framework;
 using RedactionWcf.Models;
 using System;
 using System.Collections.Generic;
@@ -67,7 +68,7 @@ namespace RedactionWcf.Services
         /// </summary>
         public Appointment CreateAppointment(Appointment appointment)
         {
-            string correlationId= RedactionWcf.Infrastructure.ContextProvider.CorrelationId;
+            string correlationId= ContextProvider.CorrelationId;
             if (appointment == null)
             {
                 throw new WebFaultException<string>("Appointment data is required", System.Net.HttpStatusCode.BadRequest);

@@ -1,3 +1,5 @@
+#if NET48_OR_GREATER
+
 using System;
 using System.IO;
 using System.ServiceModel;
@@ -11,7 +13,7 @@ using System.Text.RegularExpressions;
 using System.Web;
 using System.Xml;
 
-namespace RedactionWcf.Infrastructure
+namespace mylogging.observability.Framework
 {
     public class WcfLoggingInspector : IDispatchMessageInspector
     {
@@ -21,7 +23,7 @@ namespace RedactionWcf.Infrastructure
             {
                 if (HttpContext.Current != null && request != null)
                 {
-                    var buffer = request.CreateBufferedCopy(Int32.MaxValue);
+                    var buffer = request.CreateBufferedCopy(int.MaxValue);
                     request = buffer.CreateMessage();
                     var copy = buffer.CreateMessage();
 
@@ -56,7 +58,7 @@ namespace RedactionWcf.Infrastructure
             {
                 if (HttpContext.Current != null && reply != null)
                 {
-                    var buffer = reply.CreateBufferedCopy(Int32.MaxValue);
+                    var buffer = reply.CreateBufferedCopy(int.MaxValue);
                     reply = buffer.CreateMessage();
                     var copy = buffer.CreateMessage();
 
@@ -158,3 +160,4 @@ namespace RedactionWcf.Infrastructure
         }
     }
 }
+#endif
