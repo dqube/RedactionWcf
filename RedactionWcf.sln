@@ -5,6 +5,8 @@ VisualStudioVersion = 17.14.36327.8 d17.14
 MinimumVisualStudioVersion = 10.0.40219.1
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "RedactionWcf", "RedactionWcf.csproj", "{6DD38A76-887E-45F2-86B1-E9F0C8D87269}"
 EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "RedactionCore", "..\RedactionCore\RedactionCore.csproj", "{B99F8F4C-EC4F-4403-8A29-105D8BA1C775}"
+EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|Any CPU = Debug|Any CPU
@@ -15,6 +17,10 @@ Global
 		{6DD38A76-887E-45F2-86B1-E9F0C8D87269}.Debug|Any CPU.Build.0 = Debug|Any CPU
 		{6DD38A76-887E-45F2-86B1-E9F0C8D87269}.Release|Any CPU.ActiveCfg = Release|Any CPU
 		{6DD38A76-887E-45F2-86B1-E9F0C8D87269}.Release|Any CPU.Build.0 = Release|Any CPU
+		{B99F8F4C-EC4F-4403-8A29-105D8BA1C775}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{B99F8F4C-EC4F-4403-8A29-105D8BA1C775}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{B99F8F4C-EC4F-4403-8A29-105D8BA1C775}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{B99F8F4C-EC4F-4403-8A29-105D8BA1C775}.Release|Any CPU.Build.0 = Release|Any CPU
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE

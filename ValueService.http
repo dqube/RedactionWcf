@@ -11,7 +11,20 @@ X-User-Id: tester@example.com
 Accept: application/json
 
 ###
+### 4. Create New Appointment - With Headers
+POST {{serviceUrl}}/values
+X-Correlation-Id: create-001
+X-Consumer-Id: mobile-app
+X-User-Id: doctor@hospital.com
+Content-Type: application/json
+Accept: application/json
 
+{
+  "Id": 0,
+  "Name": "Follow-up appointment for test results review"
+}
+
+###
 ### 2. Get Specific Value by ID (with correlation headers)
 GET {{serviceUrl}}/5
 X-Correlation-Id: get-one-value-001

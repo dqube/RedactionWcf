@@ -22,8 +22,18 @@ namespace RedactionWcf.Controllers
         }
 
         // POST api/values
-        public void Post([FromBody] string value)
+        [HttpPost]
+        public IHttpActionResult Post([FromBody] SampleData data)
         {
+            if (data == null)
+            {
+                return BadRequest("Sample data cannot be null");
+            }
+
+            // Process the data here
+            // For example, save to database
+
+            return Ok(data);
         }
 
         // PUT api/values/5
@@ -35,5 +45,11 @@ namespace RedactionWcf.Controllers
         public void Delete(int id)
         {
         }
+
+    }
+    public class SampleData
+    {
+        public int Id { get; set; }
+        public string Name { get; set; }
     }
 }

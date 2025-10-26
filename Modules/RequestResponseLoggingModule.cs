@@ -245,17 +245,26 @@ namespace RedactionWcf.Modules
                     var response = context.Response;
                     var duration = DateTime.UtcNow - requestContext.RequestTime;
 
-                    // Get request body - either from context (WCF) or from filter
+                    // Get request body - try multiple sources
                     string requestBody = requestContext.RequestBody;
                     
-                    if (string.IsNullOrEmpty(requestBody) && context.Items["RequestFilter"] is RequestCaptureFilter requestFilter)
-                    {
-                        requestBody = requestFilter.GetCapturedContent();
-                    }
-                    else if (string.IsNullOrEmpty(requestBody) && context.Items["WCF_RequestBody"] is string wcfRequestBody)
+                    // Check WCF inspector first
+                    if (string.IsNullOrEmpty(requestBody) && context.Items["WCF_RequestBody"] is string wcfRequestBody)
                     {
                         requestBody = wcfRequestBody;
                         Debug.WriteLine($"[OnEndRequest] Got request body from WCF_RequestBody: {requestBody?.Length ?? 0} bytes");
+                    }
+                    // Then check Web API handler
+                    else if (string.IsNullOrEmpty(requestBody) && context.Items["WebAPI_RequestBody"] is string webApiRequestBody)
+                    {
+                        requestBody = webApiRequestBody;
+                        Debug.WriteLine($"[OnEndRequest] Got request body from WebAPI_RequestBody: {requestBody?.Length ?? 0} bytes");
+                    }
+                    // Finally check the filter
+                    else if (string.IsNullOrEmpty(requestBody) && context.Items["RequestFilter"] is RequestCaptureFilter requestFilter)
+                    {
+                        requestBody = requestFilter.GetCapturedContent();
+                        Debug.WriteLine($"[OnEndRequest] Got request body from RequestFilter: {requestBody?.Length ?? 0} bytes");
                     }
 
                     // Extract IDs from request body if needed
@@ -296,15 +305,20 @@ namespace RedactionWcf.Modules
 
                     requestContext.RequestInfo = requestInfo;
 
-                    // Get response body - try multiple sources with detailed logging
+                    // Get response body - try multiple sources
                     string responseBody = null;
-                    
                     
                     // First, check if WCF inspector captured it
                     if (context.Items["WCF_ResponseBody"] is string wcfResponseBody)
                     {
                         responseBody = wcfResponseBody;
                         Debug.WriteLine($"[OnEndRequest] Got response from WCF_ResponseBody: {responseBody?.Length ?? 0} bytes");
+                    }
+                    // Then check if Web API handler captured it
+                    else if (context.Items["WebAPI_ResponseBody"] is string webApiResponseBody)
+                    {
+                        responseBody = webApiResponseBody;
+                        Debug.WriteLine($"[OnEndRequest] Got response from WebAPI_ResponseBody: {responseBody?.Length ?? 0} bytes");
                     }
                     // Then check if we captured it in PreSendRequestHeaders
                     else if (context.Items["CapturedResponseBody"] is string capturedResp)
@@ -813,32 +827,45 @@ namespace RedactionWcf.Modules
             {
                 _originalStream = originalStream;
                 _captureStream = new MemoryStream();
+                Debug.WriteLine($"[ResponseCaptureFilter] Created - OriginalStream type: {originalStream?.GetType().Name}");
             }
 
             public string GetCapturedContent()
             {
                 try
                 {
+                    if (_captureStream.Length == 0)
+                    {
+                        Debug.WriteLine($"[ResponseCaptureFilter] GetCapturedContent called but _captureStream is EMPTY");
+                        return null;
+                    }
+
+                    Debug.WriteLine($"[ResponseCaptureFilter] GetCapturedContent - Stream length: {_captureStream.Length} bytes");
                     _captureStream.Position = 0;
                     using (var reader = new StreamReader(_captureStream, Encoding.UTF8, true, 1024, true))
                     {
-                        return reader.ReadToEnd();
+                        var content = reader.ReadToEnd();
+                        Debug.WriteLine($"[ResponseCaptureFilter] Successfully read {content?.Length ?? 0} characters");
+                        return content;
                     }
                 }
-                catch
+                catch (Exception ex)
                 {
+                    Debug.WriteLine($"[ResponseCaptureFilter] ERROR in GetCapturedContent: {ex.Message}");
                     return null;
                 }
             }
 
             public override void Write(byte[] buffer, int offset, int count)
             {
+                Debug.WriteLine($"[ResponseCaptureFilter] Write called - {count} bytes");
                 _captureStream.Write(buffer, offset, count);
                 _originalStream.Write(buffer, offset, count);
             }
 
             public override void Flush()
             {
+                Debug.WriteLine($"[ResponseCaptureFilter] Flush called");
                 _originalStream.Flush();
             }
 
@@ -872,6 +899,7 @@ namespace RedactionWcf.Modules
             {
                 if (disposing)
                 {
+                    Debug.WriteLine($"[ResponseCaptureFilter] Disposing - Captured {_captureStream.Length} bytes total");
                     _captureStream?.Dispose();
                 }
                 base.Dispose(disposing);
