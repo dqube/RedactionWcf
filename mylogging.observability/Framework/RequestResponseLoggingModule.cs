@@ -1,3 +1,5 @@
+#if NET48_OR_GREATER
+
 using Newtonsoft.Json;
 using Newtonsoft.Json.Linq;
 using System;
@@ -9,7 +11,9 @@ using System.Web;
 using System.Xml.Linq;
 using Microsoft.Extensions.Logging;
 
-namespace RedactionWcf.Modules
+
+
+namespace mylogging.observability.Framework
 {
     /// <summary>
     /// HTTP Module for logging requests and responses with correlation tracking
@@ -775,30 +779,30 @@ namespace RedactionWcf.Modules
             var combinedLog = new
             {
                 LogType = "RequestResponse",
-                CorrelationId = context.CorrelationId,
-                ConsumerId = context.ConsumerId,
-                UserId = context.UserId,
-                ClassName = context.RequestInfo.ClassName,
+                context.CorrelationId,
+                context.ConsumerId,
+                context.UserId,
+                context.RequestInfo.ClassName,
                 OperationName = context.RequestInfo.OperationName ?? context.RequestInfo.ClassName,
                 ExecutionTime = duration.TotalMilliseconds,               
                 Request = new
                 {
-                    Timestamp = context.RequestInfo.Timestamp,
-                    Method = context.RequestInfo.Method,
-                    Path = context.RequestInfo.Path,
-                    QueryString = context.RequestInfo.QueryString,
-                    ContentType = context.RequestInfo.ContentType,
-                    Headers = context.RequestInfo.Headers,
-                    Body = context.RequestInfo.Body
+                    context.RequestInfo.Timestamp,
+                    context.RequestInfo.Method,
+                    context.RequestInfo.Path,
+                    context.RequestInfo.QueryString,
+                    context.RequestInfo.ContentType,
+                    context.RequestInfo.Headers,
+                    context.RequestInfo.Body
                 },
                 Response = new
                 {
-                    Timestamp = responseInfo.Timestamp,
-                    StatusCode = responseInfo.StatusCode,
-                    StatusDescription = responseInfo.StatusDescription,
-                    ContentType = responseInfo.ContentType,
-                    Headers = responseInfo.Headers,
-                    Body = responseInfo.Body
+                    responseInfo.Timestamp,
+                    responseInfo.StatusCode,
+                    responseInfo.StatusDescription,
+                    responseInfo.ContentType,
+                    responseInfo.Headers,
+                    responseInfo.Body
                 }
             };
 
@@ -820,28 +824,28 @@ namespace RedactionWcf.Modules
             var errorLog = new
             {
                 LogType = "Error",
-                CorrelationId = context.CorrelationId,
-                ConsumerId = context.ConsumerId,
-                UserId = context.UserId,
-                ClassName = context.RequestInfo.ClassName,
+                context.CorrelationId,
+                context.ConsumerId,
+                context.UserId,
+                context.RequestInfo.ClassName,
                 OperationName = context.RequestInfo.OperationName ?? context.RequestInfo.ClassName,
                 ExecutionTime = duration.TotalMilliseconds,               
                 Request = new
                 {
-                    Timestamp = context.RequestInfo.Timestamp,
-                    Method = context.RequestInfo.Method,
-                    Path = context.RequestInfo.Path,
-                    QueryString = context.RequestInfo.QueryString,
-                    ContentType = context.RequestInfo.ContentType,
-                    Headers = context.RequestInfo.Headers,
-                    Body = context.RequestInfo.Body
+                    context.RequestInfo.Timestamp,
+                    context.RequestInfo.Method,
+                    context.RequestInfo.Path,
+                    context.RequestInfo.QueryString,
+                    context.RequestInfo.ContentType,
+                    context.RequestInfo.Headers,
+                    context.RequestInfo.Body
                 },
                 Error = new
                 {
                     Timestamp = DateTime.UtcNow,
-                    Message = exception.Message,
+                    exception.Message,
                     Type = exception.GetType().Name,
-                    StackTrace = exception.StackTrace,
+                    exception.StackTrace,
                     InnerException = exception.InnerException?.Message
                 }
             };
@@ -1175,3 +1179,4 @@ namespace RedactionWcf.Modules
         }
     }
 }
+#endif

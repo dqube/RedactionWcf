@@ -17,28 +17,29 @@
 
   <!-- Common dependencies for all target frameworks -->
   <ItemGroup>
-    <PackageReference Include="System.Text.Json" Version="8.0.5" />
+    <PackageReference Include="OpenTelemetry" Version="1.13.1" />
+    <PackageReference Include="System.Text.Json" Version="9.0.0" />
     <PackageReference Include="Newtonsoft.Json" Version="13.0.3" />
+    <PackageReference Include="Microsoft.Extensions.Logging" Version="9.0.0" />
   </ItemGroup>
   
   <!-- .NET Framework specific dependencies -->
   <ItemGroup Condition="'$(TargetFramework)' == 'net48'">
-    <PackageReference Include="Microsoft.Extensions.Logging.Abstractions" Version="8.0.2" />
-    <PackageReference Include="System.Diagnostics.DiagnosticSource" Version="8.0.1" />
+   
+    <PackageReference Include="System.Diagnostics.DiagnosticSource" Version="9.0.1" />
     <Reference Include="System.Web" />
-    <Reference Include="System.ServiceModel"/>
-    <Reference Include="System.ServiceModel.Activation"/>
-    <Reference Include="System.Configuration"/>
-    <Reference Include="System.ServiceModel.Web"/>
+    <Reference Include="System.ServiceModel" />
+    <Reference Include="System.ServiceModel.Activation" />
+    <Reference Include="System.Configuration" />
+    <Reference Include="System.ServiceModel.Web" />
+    <Reference Include="System.Net.Http" />
   </ItemGroup>
 
   <!-- .NET 8+ specific dependencies (already included in framework) -->
   <ItemGroup Condition="'$(TargetFramework)' == 'net8.0'">
     <!-- Microsoft.Extensions.Logging.Abstractions is part of .NET 8 -->
-  </ItemGroup>
-  <ItemGroup>
-    <Folder Include="Common\" />
-    <Folder Include="Core\" />
+    <PackageReference Include="Microsoft.AspNetCore.Http.Abstractions" Version="2.3.0" />
+    <PackageReference Include="Microsoft.AspNetCore.Http.Extensions" Version="2.3.0" />
   </ItemGroup>
 
   <!-- Conditional compilation symbols -->

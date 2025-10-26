@@ -1,11 +1,13 @@
-﻿using System;
+﻿#if NET48_OR_GREATER
+
+using System;
 using System.Diagnostics;
 using System.Net.Http;
 using System.Threading;
 using System.Threading.Tasks;
 using System.Web;
 
-namespace RedactionWcf.Handler
+namespace mylogging.observability.Framework
 {
     /// <summary>
     /// Web API Message Handler to capture request and response bodies
@@ -58,3 +60,4 @@ namespace RedactionWcf.Handler
         }
     }
 }
+#endif

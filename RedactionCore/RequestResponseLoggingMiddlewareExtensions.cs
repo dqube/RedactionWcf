@@ -1,3 +1,5 @@
+using mylogging.observability.Core;
+
 namespace RedactionCore.Middleware
 {
     public static class RequestResponseLoggingMiddlewareExtensions

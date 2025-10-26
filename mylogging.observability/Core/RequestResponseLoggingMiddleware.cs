@@ -1,9 +1,12 @@
+#if NET8_0
+using Microsoft.AspNetCore.Http;
+using Microsoft.AspNetCore.Http.Extensions;
 using Microsoft.Extensions.Logging;
 using System.Diagnostics;
 using System.Text;
 using System.Text.Json;
 
-namespace RedactionCore.Middleware
+namespace mylogging.observability.Core
 {
     /// <summary>
     /// Middleware for logging requests and responses with correlation tracking
@@ -18,23 +21,20 @@ namespace RedactionCore.Middleware
         private const string ConsumerIdHeader = "X-Consumer-Id";
         private const string UserIdHeader = "X-User-Id";
 
-        private static readonly string[] CorrelationIdHeaders = new[]
-        {
-                "X-Correlation-Id", "CorrelationId", "x-correlation-id",
-                "correlationId", "Correlation-Id", "correlation-id"
-            };
+        private static readonly string[] CorrelationIdHeaders = new[] {
+                    "X-Correlation-Id", "CorrelationId", "x-correlation-id",
+                    "correlationId", "Correlation-Id", "correlation-id"
+                };
 
-        private static readonly string[] ConsumerIdHeaders = new[]
-        {
-                "X-Consumer-Id", "ConsumerId", "x-consumer-id",
-                "consumerId", "Consumer-Id", "consumer-id"
-            };
+        private static readonly string[] ConsumerIdHeaders = new[] {
+                    "X-Consumer-Id", "ConsumerId", "x-consumer-id",
+                    "consumerId", "Consumer-Id", "consumer-id"
+                };
 
-        private static readonly string[] UserIdHeaders = new[]
-        {
-                "X-User-Id", "UserId", "x-user-id",
-                "userId", "User-Id", "user-id"
-            };
+        private static readonly string[] UserIdHeaders = new[] {
+                    "X-User-Id", "UserId", "x-user-id",
+                    "userId", "User-Id", "user-id"
+                };
 
         public RequestResponseLoggingMiddleware(RequestDelegate next, ILogger<RequestResponseLoggingMiddleware> logger)
         {
@@ -65,12 +65,22 @@ namespace RedactionCore.Middleware
                 correlationId = Guid.NewGuid().ToString();
             }
 
+            // Enable request body buffering by copying to a seekable stream
+            var originalRequestBody = context.Request.Body;
+            var buffer = new MemoryStream();
+            await context.Request.Body.CopyToAsync(buffer);
+            buffer.Position = 0;
+            context.Request.Body = buffer;
+
             // Capture request body
             string? requestBody = null;
-            if (context.Request.ContentLength > 0 && context.Request.ContentLength <= 10485760) // 10MB limit
+            if (buffer.Length > 0 && buffer.Length <= 10485760) // 10MB limit
             {
                 requestBody = await ReadRequestBodyAsync(context.Request);
             }
+
+            // Restore the original stream (though the buffered one will be used by downstream middleware)
+            // Note: We keep the buffer as the request body for downstream middleware to read
 
             // Extract IDs from body if not in headers
             bool needsBodyExtraction = string.IsNullOrEmpty(consumerId) || string.IsNullOrEmpty(userId);
@@ -162,7 +172,8 @@ namespace RedactionCore.Middleware
         {
             try
             {
-                request.EnableBuffering();
+                // Ensure we're at the beginning of the stream
+                request.Body.Position = 0;
 
                 using var reader = new StreamReader(
                     request.Body,
@@ -172,13 +183,17 @@ namespace RedactionCore.Middleware
                     leaveOpen: true);
 
                 var body = await reader.ReadToEndAsync();
+                
+                // Reset position for the next middleware to read
                 request.Body.Position = 0;
-
+                
+                Debug.WriteLine($"Successfully read request body: {body?.Length ?? 0} characters");
                 return body;
             }
             catch (Exception ex)
             {
                 Debug.WriteLine($"Error reading request body: {ex.Message}");
+                _logger.LogWarning(ex, "Failed to read request body");
                 return null;
             }
         }
@@ -294,7 +309,7 @@ namespace RedactionCore.Middleware
                 {
                     ExtractFromJson(body, ref correlationId, ref consumerId, ref userId);
                 }
-              
+
             }
             catch (Exception ex)
             {
@@ -389,20 +404,24 @@ namespace RedactionCore.Middleware
             return null;
         }
 
-        
+
         /// <summary>
         /// Logs combined request and response as a single log entry
         /// </summary>
         private void LogRequestResponse(string correlationId, string? consumerId, string? userId,
             RequestInfo requestInfo, ResponseInfo responseInfo, TimeSpan duration)
         {
+            // Log with structured logging - headers will be properly captured
+           
+
+            // For detailed debugging, still use JSON serialization in Debug output
             var combinedLog = new
             {
                 LogType = "RequestResponse",
                 CorrelationId = correlationId,
                 ConsumerId = consumerId,
                 UserId = userId,
-                ClassName = requestInfo.ClassName,
+                requestInfo.ClassName,
                 OperationName = requestInfo.OperationName ?? requestInfo.ClassName,
                 ExecutionTime = duration.TotalMilliseconds,
                 Request = new
@@ -429,11 +448,22 @@ namespace RedactionCore.Middleware
             {
                 WriteIndented = true
             });
-
-            _logger.LogInformation("Request/Response loging for {ClassName}.{props}",
-                requestInfo.ClassName,
-               combinedLog);
-
+            _logger.LogInformation(
+               "Request/Response: {ClassName}.{OperationName} | CorrelationId: {CorrelationId} | " +
+               "ExecutionTime: {ExecutionTime} | StatusCode: {StatusCode} | " +
+               "{Method} {Path} | RequestHeaders: {@RequestHeaders} | ResponseHeaders: {@ResponseHeaders} | " +
+               "RequestBody: {RequestBody} | ResponseBody: {ResponseBody}",
+               requestInfo.ClassName,
+               requestInfo.OperationName ?? requestInfo.ClassName,
+               correlationId,
+               duration.TotalMilliseconds,
+               responseInfo.StatusCode,
+               requestInfo.Method,
+               requestInfo.Path,
+               requestInfo.Headers,
+               responseInfo.Headers,
+               requestInfo.Body,
+               responseInfo.Body);
             Debug.WriteLine("=== REQUEST/RESPONSE LOG ===");
             Debug.WriteLine(logMessage);
             Debug.WriteLine("============================");
@@ -451,7 +481,7 @@ namespace RedactionCore.Middleware
                 CorrelationId = correlationId,
                 ConsumerId = consumerId,
                 UserId = userId,
-                ClassName = requestInfo.ClassName,
+                requestInfo.ClassName,
                 OperationName = requestInfo.OperationName ?? requestInfo.ClassName,
                 ExecutionTime = duration.TotalMilliseconds,
                 Request = new
@@ -467,9 +497,9 @@ namespace RedactionCore.Middleware
                 Error = new
                 {
                     Timestamp = DateTime.UtcNow,
-                    Message = exception.Message,
+                    exception.Message,
                     Type = exception.GetType().Name,
-                    StackTrace = exception.StackTrace,
+                    exception.StackTrace,
                     InnerException = exception.InnerException?.Message
                 }
             };
@@ -479,11 +509,23 @@ namespace RedactionCore.Middleware
                 WriteIndented = true
             });
 
-            _logger.LogError(exception, "Error processing request for {ClassName}.{obj}",
+            _logger.LogError(exception,
+                "Error: {ClassName}.{OperationName} | CorrelationId: {CorrelationId} | " +
+                "ExecutionTime: {ExecutionTime} | {Method} {Path} | " +
+                "RequestHeaders: {@RequestHeaders} | RequestBody: {RequestBody} | " +
+                "ExceptionType: {ExceptionType} | ExceptionMessage: {ExceptionMessage}",
                 requestInfo.ClassName,
-                errorLog);
+                requestInfo.OperationName ?? requestInfo.ClassName,
+                correlationId,
+                duration.TotalMilliseconds,
+                requestInfo.Method,
+                requestInfo.Path,
+                requestInfo.Headers,
+                requestInfo.Body,
+                exception.GetType().Name,
+                exception.Message);
 
-         
+
         }
 
         /// <summary>
@@ -503,7 +545,7 @@ namespace RedactionCore.Middleware
 
             // Skip static file extensions
             var staticExtensions = new[] { ".css", ".js", ".jpg", ".jpeg", ".png", ".gif", ".ico",
-                                              ".woff", ".woff2", ".ttf", ".eot", ".svg", ".map", ".html", ".htm" };
+                                                  ".woff", ".woff2", ".ttf", ".eot", ".svg", ".map", ".html", ".htm" };
 
             if (staticExtensions.Any(ext => path.EndsWith(ext)))
             {
@@ -511,10 +553,9 @@ namespace RedactionCore.Middleware
             }
 
             // Skip common paths
-            var excludedPaths = new[]
-            {
-                    "/swagger", "/health", "/metrics", "/favicon.ico", "/_framework", "/_content"
-                };
+            var excludedPaths = new[] {
+                        "/swagger", "/health", "/metrics", "/favicon.ico", "/_framework", "/_content"
+                    };
 
             if (excludedPaths.Any(excluded => path.StartsWith(excluded)))
             {
@@ -564,3 +605,4 @@ namespace RedactionCore.Middleware
         }
     }
 }
+#endif

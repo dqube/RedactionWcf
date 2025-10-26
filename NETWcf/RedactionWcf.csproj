@@ -200,7 +200,6 @@
     <Compile Include="App_Start\FilterConfig.cs" />
     <Compile Include="App_Start\RouteConfig.cs" />
     <Compile Include="App_Start\WebApiConfig.cs" />
-    <Compile Include="Handler\WebApiLoggingHandler.cs" />
     <Compile Include="Areas\HelpPage\ApiDescriptionExtensions.cs" />
     <Compile Include="Areas\HelpPage\App_Start\HelpPageConfig.cs" />
     <Compile Include="Areas\HelpPage\Controllers\HelpController.cs" />
@@ -235,10 +234,7 @@
       <DependentUpon>Global.asax</DependentUpon>
     </Compile>
     <Compile Include="Models\Appointment.cs" />
-    <Compile Include="Modules\RequestResponseLoggingModule.cs" />
     <Compile Include="Properties\AssemblyInfo.cs" />
-    <Compile Include="RedactionCore\Middleware\RequestResponseLoggingMiddleware.cs" />
-    <Compile Include="RedactionCore\Program.cs" />
     <Compile Include="Services\AppointmentService.cs" />
     <Compile Include="Services\IAppointmentService.cs" />
   </ItemGroup>
