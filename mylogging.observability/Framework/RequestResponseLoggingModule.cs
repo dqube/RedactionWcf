@@ -854,7 +854,23 @@ namespace mylogging.observability.Framework
 
             // Log to trace
             Trace.TraceError(logMessage);
-            
+            _logger.LogError(exception,
+     "Error: {ClassName}.{OperationName} | CorrelationId: {CorrelationId} | ConsumerId: {ConsumerId} | UserId: {UserId} | ExecutionTime: {ExecutionTime}ms | " +
+     "{Method} {Path} | QueryString: {QueryString} | RequestTimestamp: {RequestTimestamp} | RequestContentType: {RequestContentType} | " +
+     "ErrorTimestamp: {ErrorTimestamp} | ExceptionType: {ExceptionType}",
+     context.RequestInfo.ClassName,
+     context.RequestInfo.OperationName ?? context.RequestInfo.ClassName,
+     context.CorrelationId,
+     context.ConsumerId,
+     context.UserId,
+     duration.TotalMilliseconds,
+     context.RequestInfo.Method,
+     context.RequestInfo.Path,
+     context.RequestInfo.QueryString,
+     context.RequestInfo.Timestamp,
+     context.RequestInfo.ContentType,
+     DateTime.UtcNow,
+     exception.GetType().Name);
             // Log with ILogger
             _logger.LogError(exception, "=== ERROR LOG ===");
             _logger.LogError("{LogMessage}", logMessage);

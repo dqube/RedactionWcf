@@ -1,7 +1,8 @@
 #if NET8_0
 using Microsoft.AspNetCore.Http;
-using Microsoft.AspNetCore.Http.Extensions;
 using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Options;
+using mylogging.observability.Common;
 using System.Diagnostics;
 using System.Text;
 using System.Text.Json;
@@ -16,7 +17,9 @@ namespace mylogging.observability.Core
     {
         private readonly RequestDelegate _next;
         private readonly ILogger<RequestResponseLoggingMiddleware> _logger;
-
+        private readonly ObservabilityOptions _options;
+        private readonly ITracingService? _tracingService;
+        private readonly IMetricsService? _metricsService;
         private const string CorrelationIdHeader = "X-Correlation-Id";
         private const string ConsumerIdHeader = "X-Consumer-Id";
         private const string UserIdHeader = "X-User-Id";
@@ -36,12 +39,31 @@ namespace mylogging.observability.Core
                     "userId", "User-Id", "user-id"
                 };
 
-        public RequestResponseLoggingMiddleware(RequestDelegate next, ILogger<RequestResponseLoggingMiddleware> logger)
+        /// <summary>
+        /// Initializes a new instance of the <see cref="RequestResponseLoggingMiddleware"/> class.
+        /// </summary>
+        /// <param name="next">The next middleware in the pipeline.</param>
+        /// <param name="logger">The logger instance for this middleware.</param>
+        /// <param name="options">The observability configuration options.</param>
+        /// <param name="tracingService">Optional tracing service for distributed tracing.</param>
+        /// <param name="metricsService">Optional metrics service for collecting metrics.</param>
+        public RequestResponseLoggingMiddleware(RequestDelegate next, ILogger<RequestResponseLoggingMiddleware> logger,
+             IOptions<ObservabilityOptions> options,
+            ITracingService? tracingService = null,
+            IMetricsService? metricsService = null)
         {
             _next = next;
             _logger = logger;
+            _options = options.Value;
+            _tracingService = tracingService;
+            _metricsService = metricsService;
         }
 
+        /// <summary>
+        /// Invokes the middleware to log HTTP request and response information.
+        /// </summary>
+        /// <param name="context">The HTTP context for the current request.</param>
+        /// <returns>A task that represents the asynchronous operation.</returns>
         public async Task InvokeAsync(HttpContext context)
         {
             // Skip logging for static resources and non-API requests
