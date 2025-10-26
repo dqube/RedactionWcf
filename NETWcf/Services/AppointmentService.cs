@@ -67,6 +67,7 @@ namespace RedactionWcf.Services
         /// </summary>
         public Appointment CreateAppointment(Appointment appointment)
         {
+            string correlationId= RedactionWcf.Infrastructure.ContextProvider.CorrelationId;
             if (appointment == null)
             {
                 throw new WebFaultException<string>("Appointment data is required", System.Net.HttpStatusCode.BadRequest);
