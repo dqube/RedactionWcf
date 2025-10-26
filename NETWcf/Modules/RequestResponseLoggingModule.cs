@@ -7,6 +7,7 @@ using System.Linq;
 using System.Text;
 using System.Web;
 using System.Xml.Linq;
+using Microsoft.Extensions.Logging;
 
 namespace RedactionWcf.Modules
 {
@@ -17,6 +18,9 @@ namespace RedactionWcf.Modules
     /// </summary>
     public class RequestResponseLoggingModule : IHttpModule
     {
+        // Static logger instance (initialized once for the entire application)
+        private static readonly ILogger _logger;
+
         // Primary header names
         private const string CorrelationIdHeader = "X-Correlation-Id";
         private const string ConsumerIdHeader = "X-Consumer-Id";
@@ -53,6 +57,19 @@ namespace RedactionWcf.Modules
             "user-id"
         };
 
+        static RequestResponseLoggingModule()
+        {
+            // Initialize logger factory
+            var loggerFactory = LoggerFactory.Create(builder =>
+            {
+                //builder.AddDebug();
+                //builder.AddConsole();
+                builder.SetMinimumLevel(LogLevel.Debug);
+            });
+
+            _logger = loggerFactory.CreateLogger<RequestResponseLoggingModule>();
+        }
+
         public void Init(HttpApplication context)
         {
             context.BeginRequest += OnBeginRequest;
@@ -75,11 +92,15 @@ namespace RedactionWcf.Modules
                     return;
                 }
 
-
                 // Extract correlation information from headers first
                 string correlationId = GetHeaderValueWithFallback(request, CorrelationIdHeaders);
                 string consumerId = GetHeaderValueWithFallback(request, ConsumerIdHeaders);
                 string userId = GetHeaderValueWithFallback(request, UserIdHeaders);
+
+                // Parse ClassName and OperationName from path early
+                string className = null;
+                string operationName = null;
+                ParseClassAndOperationName(request.RawUrl, out className, out operationName);
 
                 // For WCF services (.svc), we need to capture the body BEFORE WCF reads it
                 string requestBody = null;
@@ -163,6 +184,26 @@ namespace RedactionWcf.Modules
 
                 context.Items["RequestContext"] = requestContext;
 
+                // Set initial values in HttpContext.Items for CorrelationContext static access
+                context.Items["CorrelationId"] = correlationId;
+                if (!string.IsNullOrEmpty(consumerId))
+                {
+                    context.Items["ConsumerId"] = consumerId;
+                }
+                if (!string.IsNullOrEmpty(userId))
+                {
+                    context.Items["UserId"] = userId;
+                }
+                // Set ClassName and OperationName for CorrelationContext access
+                if (!string.IsNullOrEmpty(className))
+                {
+                    context.Items["ClassName"] = className;
+                }
+                if (!string.IsNullOrEmpty(operationName))
+                {
+                    context.Items["OperationName"] = operationName;
+                }
+
                 // Add correlation ID to response headers for tracking
                 try
                 {
@@ -181,7 +222,7 @@ namespace RedactionWcf.Modules
                     Debug.WriteLine($"Failed to add response headers: {headerEx.Message}");
                 }
 
-                Debug.WriteLine($"Request filters installed - CorrelationId: {correlationId}");
+                Debug.WriteLine($"Request filters installed - CorrelationId: {correlationId}, ClassName: {className}, OperationName: {operationName}");
             }
             catch (Exception ex)
             {
@@ -282,6 +323,11 @@ namespace RedactionWcf.Modules
                         requestContext.CorrelationId = corrId;
                         requestContext.ConsumerId = consId;
                         requestContext.UserId = usrId;
+
+                        // Update HttpContext.Items with extracted values for CorrelationContext
+                        context.Items["CorrelationId"] = corrId;
+                        context.Items["ConsumerId"] = consId;
+                        context.Items["UserId"] = usrId;
                     }
 
                     // Parse ClassName and OperationName from path
@@ -762,9 +808,8 @@ namespace RedactionWcf.Modules
             Trace.TraceInformation(logMessage);
 
             // Also log to Debug for development
-            Debug.WriteLine("=== REQUEST/RESPONSE LOG ===");
-            Debug.WriteLine(logMessage);
-            Debug.WriteLine("============================");
+            _logger.LogInformation(logMessage);
+           
         }
 
         /// <summary>
@@ -805,12 +850,15 @@ namespace RedactionWcf.Modules
 
             // Log to trace
             Trace.TraceError(logMessage);
-
-           
+            
+            // Log with ILogger
+            _logger.LogError(exception, "=== ERROR LOG ===");
+            _logger.LogError("{LogMessage}", logMessage);
+            _logger.LogError("=================");
         }
 
-      
-     
+
+
 
         public void Dispose()
         {
