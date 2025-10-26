@@ -1,0 +1,197 @@
+@RedactionCore_HostAddress = http://localhost:5107
+
+### Health Check
+GET {{RedactionCore_HostAddress}}/api/health
+Accept: application/json
+
+###
+
+### Get Weather Forecast
+GET {{RedactionCore_HostAddress}}/weatherforecast/
+Accept: application/json
+
+###
+
+##########################################
+# Product API Tests with Correlation Headers
+##########################################
+
+### 1. Get All Products (Empty initially)
+GET {{RedactionCore_HostAddress}}/api/product
+Accept: application/json
+X-Correlation-Id: test-{{$randomUUID}}
+X-Consumer-Id: http-test-client
+X-User-Id: tester@example.com
+
+###
+
+### 2. Create Product - With Correlation Headers
+POST {{RedactionCore_HostAddress}}/api/product
+Content-Type: application/json
+X-Correlation-Id: create-{{$randomUUID}}
+X-Consumer-Id: product-management-app
+X-User-Id: admin@example.com
+
+{
+  "name": "Laptop",
+  "description": "High-performance laptop",
+  "price": 1299.99,
+  "category": "Electronics",
+  "stockQuantity": 50
+}
+
+###
+
+### 3. Create Product - With IDs in Body
+POST {{RedactionCore_HostAddress}}/api/product
+Content-Type: application/json
+
+{
+  "correlationId": "body-correlation-{{$randomUUID}}",
+  "consumerId": "mobile-app",
+  "userId": "mobile-user@example.com",
+  "name": "Wireless Mouse",
+  "description": "Ergonomic wireless mouse",
+  "price": 29.99,
+  "category": "Electronics",
+  "stockQuantity": 200
+}
+
+###
+
+### 4. Create Product - With Nested Headers in Body
+POST {{RedactionCore_HostAddress}}/api/product
+Content-Type: application/json
+
+{
+  "header": {
+    "correlationId": "nested-{{$randomUUID}}",
+    "consumerId": "web-portal",
+    "userId": "portal-admin@example.com"
+  },
+  "name": "Mechanical Keyboard",
+  "description": "RGB mechanical gaming keyboard",
+  "price": 149.99,
+  "category": "Electronics",
+  "stockQuantity": 75
+}
+
+###
+
+### 5. Get All Products (Should have products now)
+GET {{RedactionCore_HostAddress}}/api/product
+Accept: application/json
+X-Correlation-Id: getall-{{$randomUUID}}
+X-Consumer-Id: inventory-system
+X-User-Id: inventory@example.com
+
+###
+
+### 6. Get Product By ID (Replace {id} with actual ID from create response)
+GET {{RedactionCore_HostAddress}}/api/product/1
+Accept: application/json
+X-Correlation-Id: getbyid-{{$randomUUID}}
+X-Consumer-Id: customer-app
+X-User-Id: customer@example.com
+
+###
+
+### 7. Update Product (Replace {id} with actual ID)
+PUT {{RedactionCore_HostAddress}}/api/product/1
+Content-Type: application/json
+X-Correlation-Id: update-{{$randomUUID}}
+X-Consumer-Id: product-management-app
+X-User-Id: manager@example.com
+
+{
+  "name": "Gaming Laptop - Updated",
+  "description": "High-performance gaming laptop with RTX 4080",
+  "price": 1599.99,
+  "category": "Electronics",
+  "stockQuantity": 45
+}
+
+###
+
+### 8. Delete Product (Replace {id} with actual ID)
+DELETE {{RedactionCore_HostAddress}}/api/product/1
+X-Correlation-Id: delete-{{$randomUUID}}
+X-Consumer-Id: product-management-app
+X-User-Id: admin@example.com
+
+###
+
+### 9. Get Non-Existent Product (Should return 404)
+GET {{RedactionCore_HostAddress}}/api/product/9999
+Accept: application/json
+X-Correlation-Id: notfound-{{$randomUUID}}
+X-Consumer-Id: test-client
+X-User-Id: tester@example.com
+
+###
+
+##########################################
+# Appointment API Tests
+##########################################
+
+### Get All Appointments
+GET {{RedactionCore_HostAddress}}/api/appointments/GetAllAppointments
+Accept: application/json
+X-Correlation-Id: appt-list-{{$randomUUID}}
+X-Consumer-Id: appointment-system
+X-User-Id: scheduler@example.com
+
+###
+
+### Create Appointment
+POST {{RedactionCore_HostAddress}}/api/appointments/CreateAppointment
+Content-Type: application/json
+X-Correlation-Id: appt-create-{{$randomUUID}}
+X-Consumer-Id: booking-app
+X-User-Id: patient@example.com
+
+{
+  "title": "Annual Checkup",
+  "description": "Regular health checkup",
+  "startTime": "2024-12-20T10:00:00",
+  "endTime": "2024-12-20T11:00:00",
+  "location": "Room 101",
+  "attendeeEmail": "patient@example.com"
+}
+
+###
+
+### Get Appointment By ID
+GET {{RedactionCore_HostAddress}}/api/appointments/GetAppointmentById/1
+Accept: application/json
+X-Correlation-Id: appt-get-{{$randomUUID}}
+X-Consumer-Id: appointment-system
+X-User-Id: scheduler@example.com
+
+###
+
+### Update Appointment
+PUT {{RedactionCore_HostAddress}}/api/appointments/UpdateAppointment/1
+Content-Type: application/json
+X-Correlation-Id: appt-update-{{$randomUUID}}
+X-Consumer-Id: booking-app
+X-User-Id: patient@example.com
+
+{
+  "title": "Annual Checkup - Rescheduled",
+  "description": "Regular health checkup with blood work",
+  "startTime": "2024-12-21T14:00:00",
+  "endTime": "2024-12-21T15:00:00",
+  "location": "Room 205",
+  "attendeeEmail": "patient@example.com"
+}
+
+###
+
+### Delete Appointment
+DELETE {{RedactionCore_HostAddress}}/api/appointments/DeleteAppointment/1
+X-Correlation-Id: appt-delete-{{$randomUUID}}
+X-Consumer-Id: booking-app
+X-User-Id: admin@example.com
+
+###
