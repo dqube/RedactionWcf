@@ -68,6 +68,8 @@ namespace RedactionWcf.Services
         /// </summary>
         public Appointment CreateAppointment(Appointment appointment)
         {
+            var activity = System.Diagnostics.Activity.Current;
+
             string correlationId= ContextProvider.CorrelationId;
             if (appointment == null)
             {
