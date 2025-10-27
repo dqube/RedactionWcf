@@ -74,7 +74,7 @@ namespace RedactionWcf.Services
             var activity = System.Diagnostics.Activity.Current;
 
             // Method 2: Access via HttpContext (alternative)
-            var activityFromContext = HttpContext.Current?.Items[$"{WcfTelemetryConfiguration.Options?.ServiceName ?? "WcfTelemetry"}.Activity"] as Activity;
+            var activityFromContext = HttpContext.Current?.Items[$"{TelemetryConfiguration.Options?.ServiceName ?? "WcfTelemetry"}.Activity"] as Activity;
 
             // ContextProvider.CorrelationId works independently
             string correlationId = ContextProvider.CorrelationId;

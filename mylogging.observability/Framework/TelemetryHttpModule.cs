@@ -27,12 +27,12 @@ namespace mylogging.observability.Framework
         // Static logger instance (initialized once for the entire application)
         private static readonly ILogger _logger;
         private static ActivitySource? _activitySource;
-        private const string RequestStartTimeKey = "WcfTelemetry.RequestStartTime";
+        private const string RequestStartTimeKey = "Telemetry.RequestStartTime";
         private static readonly TextMapPropagator Propagator = Propagators.DefaultTextMapPropagator;
-        private static string ActivityKey => $"{WcfTelemetryConfiguration.Options?.ServiceName ?? "WcfTelemetry"}.Activity";
-        private const string RequestBodyKey = "WcfTelemetry.RequestBody";
-        private const string ResponseFilterKey = "WcfTelemetry.ResponseFilter";
-        private const string ResponseBodyKey = "WcfTelemetry.ResponseBody";
+        private static string ActivityKey => $"{TelemetryConfiguration.Options?.ServiceName ?? "Telemetry"}.Activity";
+        private const string RequestBodyKey = "Telemetry.RequestBody";
+        private const string ResponseFilterKey = "Telemetry.ResponseFilter";
+        private const string ResponseBodyKey = "Telemetry.ResponseBody";
 
         static TelemetryHttpModule()
         {
@@ -51,8 +51,8 @@ namespace mylogging.observability.Framework
             {
                 if (_activitySource == null)
                 {
-                    var serviceName = WcfTelemetryConfiguration.Options?.ServiceName ?? "WcfTelemetry";
-                    _activitySource = new ActivitySource($"{serviceName}.WCF", "1.0.0");
+                    var serviceName = TelemetryConfiguration.Options?.ServiceName ?? "Telemetry";
+                    _activitySource = new ActivitySource(serviceName, "1.0.0");
                 }
                 return _activitySource;
             }
@@ -62,7 +62,7 @@ namespace mylogging.observability.Framework
 
 
         // Alternative header names to check
-        private static string[] CorrelationIdHeaders => WcfTelemetryConfiguration.Options?.RequestResponseLogging.CorrelationIdHeaders?.ToArray() ?? new[]
+        private static string[] CorrelationIdHeaders => TelemetryConfiguration.Options?.RequestResponseLogging.CorrelationIdHeaders?.ToArray() ?? new[]
         {
                 "X-Correlation-Id",
                 "CorrelationId",
@@ -72,7 +72,7 @@ namespace mylogging.observability.Framework
                 "correlation-id"
             };
 
-        private static string[] ConsumerIdHeaders => WcfTelemetryConfiguration.Options?.RequestResponseLogging.ConsumerIdHeaders?.ToArray() ?? new[]
+        private static string[] ConsumerIdHeaders => TelemetryConfiguration.Options?.RequestResponseLogging.ConsumerIdHeaders?.ToArray() ?? new[]
         {
                 "X-Consumer-Id",
                 "ConsumerId",
@@ -82,7 +82,7 @@ namespace mylogging.observability.Framework
                 "consumer-id"
             };
 
-        private static string[] UserIdHeaders => WcfTelemetryConfiguration.Options?.RequestResponseLogging.UserIdHeaders?.ToArray() ?? new[]
+        private static string[] UserIdHeaders => TelemetryConfiguration.Options?.RequestResponseLogging.UserIdHeaders?.ToArray() ?? new[]
         {
                 "X-User-Id",
                 "UserId",
@@ -112,7 +112,7 @@ namespace mylogging.observability.Framework
             try
             {
                 // Get options from WcfTelemetryConfiguration
-                var options = WcfTelemetryConfiguration.Options;
+                var options = TelemetryConfiguration.Options;
 
                 // Check if path should be excluded based on configuration
                 if (options?.RequestResponseLogging?.ExcludePaths != null)
@@ -175,7 +175,7 @@ namespace mylogging.observability.Framework
                 // Start activity with extracted context
                 // IMPORTANT: Use Activity.Current if ActivitySource returns null (fallback mechanism)
                 var activity = ActivitySource.StartActivity(
-                    "WCF.Request",
+                    "Telemetry.Request",
                     ActivityKind.Server,
                     parentContext.ActivityContext);
 
@@ -193,7 +193,7 @@ namespace mylogging.observability.Framework
                     else
                     {
                         // Manual activity creation as last resort
-                        activity = new Activity("WCF.Request");
+                        activity = new Activity("Telemetry.Request");
                         activity.SetParentId(parentContext.ActivityContext.TraceId, parentContext.ActivityContext.SpanId, parentContext.ActivityContext.TraceFlags);
                         activity.Start();
                     }
@@ -205,8 +205,8 @@ namespace mylogging.observability.Framework
                     Activity.Current = activity;
 
                     // Set standard attributes
-                    activity.SetTag("rpc.system", options?.ServiceName ?? "WcfTelemetry");
-                    activity.SetTag("rpc.service", options?.ServiceName ?? "WcfTelemetry");
+                    activity.SetTag("rpc.system", options?.ServiceName ?? "Telemetry");
+                    activity.SetTag("rpc.service", options?.ServiceName ?? "Telemetry");
                     activity.SetTag("rpc.method", operationName);
                     activity.SetTag("http.method", context.Request.HttpMethod);
                     activity.SetTag("http.url", context.Request.Url.ToString());
@@ -258,7 +258,7 @@ namespace mylogging.observability.Framework
             catch (Exception ex)
             {
                 // Log error but don't break the request pipeline
-                Trace.TraceError($"WcfTelemetryHttpModule.OnBeginRequest error: {ex}");
+                Trace.TraceError($"TelemetryHttpModule.OnBeginRequest error: {ex}");
             }
         }
         /// <summary>
@@ -363,7 +363,7 @@ namespace mylogging.observability.Framework
             {
                 activity.SetStatus(ActivityStatusCode.Error, ex.Message);
                 activity.AddException(ex);
-                Trace.TraceError($"WcfTelemetryHttpModule.OnEndRequest error: {ex}");
+                Trace.TraceError($"TelemetryHttpModule.OnEndRequest error: {ex}");
             }
             finally
             {
@@ -434,8 +434,8 @@ namespace mylogging.observability.Framework
             catch (Exception ex)
             {
                 // Log but don't throw - error handling shouldn't break the pipeline
-                Trace.TraceError($"WcfTelemetryHttpModule.OnError error: {ex}");
-                _logger.LogError(ex, "WcfTelemetryHttpModule.OnError error");
+                Trace.TraceError($"TelemetryHttpModule.OnError error: {ex}");
+                _logger.LogError(ex, "TelemetryHttpModule.OnError error");
             }
             // ⚠️ IMPORTANT: Do NOT dispose activity here
             // OnEndRequest will be called after OnError and will handle disposal
@@ -718,7 +718,7 @@ namespace mylogging.observability.Framework
         /// </summary>
         private bool ShouldSkipLogging(HttpRequest request)
         {
-            var options = WcfTelemetryConfiguration.Options;
+            var options = TelemetryConfiguration.Options;
 
             // If no options configured, use default behavior
             if (options?.RequestResponseLogging == null)
@@ -800,7 +800,7 @@ namespace mylogging.observability.Framework
         /// </summary>
         private bool ShouldLog(HttpContext context)
         {
-            var options = WcfTelemetryConfiguration.Options;
+            var options = TelemetryConfiguration.Options;
             
             // Check if logging is enabled
             if (options?.EnableRequestResponseLogging == false)
@@ -1031,22 +1031,14 @@ namespace mylogging.observability.Framework
             {
                 _activitySource?.Dispose();
                 _activitySource = null;
-                _logger?.LogInformation("WcfTelemetryHttpModule disposed");
+                _logger?.LogInformation("TelemetryHttpModule disposed");
             }
             catch (Exception ex)
             {
-                Trace.TraceWarning($"Error disposing WcfTelemetryHttpModule: {ex.Message}");
+                Trace.TraceWarning($"Error disposing TelemetryHttpModule: {ex.Message}");
             }
         }
 
-        private class WcfRequestInfo
-        {
-            public string? ServiceName { get; set; }
-            public string? OperationName { get; set; }
-            public string? SoapAction { get; set; }
-            public string? Binding { get; set; }
-            public string? ContractName { get; set; }
-        }
 
         /// <summary>
         /// Stream filter to capture response content
