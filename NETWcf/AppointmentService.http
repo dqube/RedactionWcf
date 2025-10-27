@@ -39,14 +39,15 @@ Content-Type: application/json
 Accept: application/json
 
 {
-  "Title": "Follow-up Consultation",
-  "Description": "Follow-up appointment for test results review",
-  "AppointmentDate": "2024-12-20T10:00:00",
-  "Location": "Room 303",
-  "PatientName": "Michael Johnson",
-  "DoctorName": "Dr. Williams",
-  "DurationMinutes": 30
-}
+    "AppointmentDate": "/Date(1762209326257-0400)/",
+    "Description": "Routine physical examination",
+    "DoctorName": "Dr. Smith",
+    "DurationMinutes": 30,
+    "Id": 1,
+    "Location": "Room 101",
+    "PatientName": "John Doe",
+    "Title": "Annual Checkup"
+  }
 
 ###
 

@@ -6,6 +6,8 @@ using System.Linq;
 using System.ServiceModel;
 using System.ServiceModel.Activation;
 using System.ServiceModel.Web;
+using System.Diagnostics;
+using System.Web;
 
 namespace RedactionWcf.Services
 {
@@ -68,9 +70,15 @@ namespace RedactionWcf.Services
         /// </summary>
         public Appointment CreateAppointment(Appointment appointment)
         {
+            // Method 1: Access via Activity.Current (now works!)
             var activity = System.Diagnostics.Activity.Current;
 
-            string correlationId= ContextProvider.CorrelationId;
+            // Method 2: Access via HttpContext (alternative)
+            var activityFromContext = HttpContext.Current?.Items[$"{WcfTelemetryConfiguration.Options?.ServiceName ?? "WcfTelemetry"}.Activity"] as Activity;
+
+            // ContextProvider.CorrelationId works independently
+            string correlationId = ContextProvider.CorrelationId;
+
             if (appointment == null)
             {
                 throw new WebFaultException<string>("Appointment data is required", System.Net.HttpStatusCode.BadRequest);

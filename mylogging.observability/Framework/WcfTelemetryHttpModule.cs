@@ -1,5 +1,8 @@
 ﻿#if NET48_OR_GREATER
 
+using Microsoft.Extensions.Logging;
+using Newtonsoft.Json;
+using Newtonsoft.Json.Linq;
 using OpenTelemetry;
 using OpenTelemetry.Context.Propagation;
 using OpenTelemetry.Trace;
@@ -9,48 +12,88 @@ using System.Diagnostics;
 using System.IO;
 using System.Linq;
 using System.ServiceModel;
-using System.ServiceModel.Channels;
 using System.Text;
 using System.Web;
 using System.Xml;
-
-
-
+using System.Xml.Linq;
 
 namespace mylogging.observability.Framework
-    {
+{
     /// <summary>
     /// Custom HTTP Module for OpenTelemetry WCF instrumentation
     /// Provides full distributed tracing capabilities for WCF services with request/response logging
     /// </summary>
-    public class WcfTelemetryHttpModule : IHttpModule
+    public class TelemetryHttpModule : IHttpModule
     {
-        private static readonly ActivitySource ActivitySource = new ActivitySource("WCF.Custom.Telemetry", "1.0.0");
+        // Static logger instance (initialized once for the entire application)
+        private static readonly ILogger _logger;
+        private static ActivitySource? _activitySource;
+        private const string RequestStartTimeKey = "WcfTelemetry.RequestStartTime";
         private static readonly TextMapPropagator Propagator = Propagators.DefaultTextMapPropagator;
-        private const string ActivityKey = "WcfTelemetry.Activity";
+        private static string ActivityKey => $"{WcfTelemetryConfiguration.Options?.ServiceName ?? "WcfTelemetry"}.Activity";
         private const string RequestBodyKey = "WcfTelemetry.RequestBody";
         private const string ResponseFilterKey = "WcfTelemetry.ResponseFilter";
         private const string ResponseBodyKey = "WcfTelemetry.ResponseBody";
 
-        /// <summary>
-        /// Gets or sets a value indicating whether request body should be logged
-        /// </summary>
-        public static bool LogRequestBody { get; set; } = true;
+        static TelemetryHttpModule()
+        {
+            // Initialize logger factory
+            var loggerFactory = LoggerFactory.Create(builder =>
+            {               
+                builder.SetMinimumLevel(LogLevel.Information);
+            });
 
-        /// <summary>
-        /// Gets or sets a value indicating whether response body should be logged
-        /// </summary>
-        public static bool LogResponseBody { get; set; } = true;
+            _logger = loggerFactory.CreateLogger<TelemetryHttpModule>();
+        }
 
-        /// <summary>
-        /// Gets or sets the maximum size of body content to log (default 10KB)
-        /// </summary>
-        public static int MaxBodyLogSize { get; set; } = 10000; // 10KB default
+        private static ActivitySource ActivitySource
+        {
+            get
+            {
+                if (_activitySource == null)
+                {
+                    var serviceName = WcfTelemetryConfiguration.Options?.ServiceName ?? "WcfTelemetry";
+                    _activitySource = new ActivitySource($"{serviceName}.WCF", "1.0.0");
+                }
+                return _activitySource;
+            }
+        }
 
-        /// <summary>
-        /// Gets or sets a value indicating whether sensitive data should be sanitized
-        /// </summary>
-        public static bool SanitizeSensitiveData { get; set; } = true;
+        
+
+
+        // Alternative header names to check
+        private static string[] CorrelationIdHeaders => WcfTelemetryConfiguration.Options?.RequestResponseLogging.CorrelationIdHeaders?.ToArray() ?? new[]
+        {
+                "X-Correlation-Id",
+                "CorrelationId",
+                "x-correlation-id",
+                "correlationId",
+                "Correlation-Id",
+                "correlation-id"
+            };
+
+        private static string[] ConsumerIdHeaders => WcfTelemetryConfiguration.Options?.RequestResponseLogging.ConsumerIdHeaders?.ToArray() ?? new[]
+        {
+                "X-Consumer-Id",
+                "ConsumerId",
+                "x-consumer-id",
+                "consumerId",
+                "Consumer-Id",
+                "consumer-id"
+            };
+
+        private static string[] UserIdHeaders => WcfTelemetryConfiguration.Options?.RequestResponseLogging.UserIdHeaders?.ToArray() ?? new[]
+        {
+                "X-User-Id",
+                "UserId",
+                "x-user-id",
+                "userId",
+                "User-Id",
+                "user-id"
+            };
+
+        
 
         /// <summary>
         /// Initializes the HTTP module and hooks into application events
@@ -67,40 +110,105 @@ namespace mylogging.observability.Framework
         {
             var context = ((HttpApplication)sender).Context;
 
-            // Only process WCF requests (typically .svc endpoints)
-            //if (!IsWcfRequest(context))
-            //    return;
-
             try
             {
+                // Get options from WcfTelemetryConfiguration
+                var options = WcfTelemetryConfiguration.Options;
+
+                // Check if path should be excluded based on configuration
+                if (options?.RequestResponseLogging?.ExcludePaths != null)
+                {
+                    var path = context.Request.RawUrl.ToLowerInvariant();
+                    if (options.RequestResponseLogging.ExcludePaths.Any(excluded =>
+                        path.Contains(excluded.ToLowerInvariant())))
+                    {
+                        return; // Skip logging for excluded paths
+                    }
+                }
+                
+                // Parse ClassName and OperationName from path early
+                string? className = null;
+                string? operationName = null;
+                ParseClassAndOperationName(context.Request.RawUrl, out className, out operationName);
+                if (string.IsNullOrEmpty(operationName))
+                {
+                    operationName = className;
+                }
+                
                 // Extract trace context from incoming request
                 var parentContext = Propagator.Extract(default, context.Request, ExtractTraceContext);
                 Baggage.Current = parentContext.Baggage;
 
-
                 // Capture request body before it's consumed
                 string? requestBody = null;
-                if (LogRequestBody && context.Request.InputStream.CanRead)
+                if (options!.EnableRequestResponseLogging && context.Request.InputStream.CanRead)
                 {
                     requestBody = CaptureRequestBody(context.Request);
                     context.Items[RequestBodyKey] = requestBody;
                 }
+                
+                // Extract correlation information from headers
+                string? correlationId = GetHeaderValueWithFallback(context.Request, CorrelationIdHeaders);
+                string? consumerId = GetHeaderValueWithFallback(context.Request, ConsumerIdHeaders);
+                string? userId = GetHeaderValueWithFallback(context.Request, UserIdHeaders);
 
-                // Parse WCF-specific information
-                var wcfInfo = ExtractWcfInformation(context, requestBody);
+                if (string.IsNullOrEmpty(consumerId) || string.IsNullOrEmpty(userId))
+                {
+                    // Extract from body if needed (only if requestBody is not null)
+                    if (!string.IsNullOrEmpty(requestBody))
+                    {
+                        ExtractFromRequestBody(requestBody, context.Request.ContentType, ref correlationId, ref consumerId, ref userId);
+                    }
+                }
+                
+                // Store correlation info in HttpContext.Items for ContextProvider
+                if (!string.IsNullOrEmpty(correlationId))
+                    context.Items["CorrelationId"] = correlationId;
+                if (!string.IsNullOrEmpty(consumerId))
+                    context.Items["ConsumerId"] = consumerId;
+                if (!string.IsNullOrEmpty(userId))
+                    context.Items["UserId"] = userId;
+                if (!string.IsNullOrEmpty(className))
+                    context.Items["ClassName"] = className;
+                if (!string.IsNullOrEmpty(operationName))
+                    context.Items["OperationName"] = operationName;
 
                 // Start activity with extracted context
+                // IMPORTANT: Use Activity.Current if ActivitySource returns null (fallback mechanism)
                 var activity = ActivitySource.StartActivity(
-                    wcfInfo.OperationName ?? "WCF.Request",
+                    "WCF.Request",
                     ActivityKind.Server,
                     parentContext.ActivityContext);
 
+                // If activity is null, check if there's a current activity or create a manual one
+                if (activity == null)
+                {
+                    Trace.TraceWarning($"ActivitySource.StartActivity returned null. ActivitySource name: {ActivitySource.Name}. " +
+                                     "Ensure OpenTelemetry TracerProvider is configured with AddSource(\"{ActivitySource.Name}\")");
+                    
+                    // Fallback: Try to use existing Activity.Current or create a new one manually
+                    if (Activity.Current != null)
+                    {
+                        activity = Activity.Current;
+                    }
+                    else
+                    {
+                        // Manual activity creation as last resort
+                        activity = new Activity("WCF.Request");
+                        activity.SetParentId(parentContext.ActivityContext.TraceId, parentContext.ActivityContext.SpanId, parentContext.ActivityContext.TraceFlags);
+                        activity.Start();
+                    }
+                }
+
                 if (activity != null)
                 {
+                    // Set Activity.Current so it can be accessed in service code
+                    Activity.Current = activity;
+
                     // Set standard attributes
-                    activity.SetTag("rpc.system", "wcf");
-                    activity.SetTag("rpc.service", wcfInfo.ServiceName);
-                    activity.SetTag("rpc.method", wcfInfo.OperationName);
+                    activity.SetTag("rpc.system", options?.ServiceName ?? "WcfTelemetry");
+                    activity.SetTag("rpc.service", options?.ServiceName ?? "WcfTelemetry");
+                    activity.SetTag("rpc.method", operationName);
                     activity.SetTag("http.method", context.Request.HttpMethod);
                     activity.SetTag("http.url", context.Request.Url.ToString());
                     activity.SetTag("http.target", context.Request.RawUrl);
@@ -109,10 +217,13 @@ namespace mylogging.observability.Framework
                     activity.SetTag("net.host.name", context.Request.Url.Host);
                     activity.SetTag("net.host.port", context.Request.Url.Port);
 
-                    // WCF-specific attributes
-                    activity.SetTag("wcf.binding", wcfInfo.Binding);
-                    activity.SetTag("wcf.action", wcfInfo.SoapAction);
-                    activity.SetTag("wcf.contract", wcfInfo.ContractName);
+                    // Add correlation IDs to activity
+                    if (!string.IsNullOrEmpty(correlationId))
+                        activity.SetTag("correlation.id", correlationId);
+                    if (!string.IsNullOrEmpty(consumerId))
+                        activity.SetTag("consumer.id", consumerId);
+                    if (!string.IsNullOrEmpty(userId))
+                        activity.SetTag("user.id", userId);
 
                     if (!string.IsNullOrEmpty(context.Request.UserAgent))
                         activity.SetTag("http.user_agent", context.Request.UserAgent);
@@ -121,7 +232,7 @@ namespace mylogging.observability.Framework
                         activity.SetTag("net.peer.ip", context.Request.UserHostAddress);
 
                     // Log request body size
-                    if (!string.IsNullOrEmpty(requestBody))
+                    if (requestBody != null)
                     {
                         activity.SetTag("http.request_content_length", requestBody.Length);
                     }
@@ -130,7 +241,7 @@ namespace mylogging.observability.Framework
                     context.Items[ActivityKey] = activity;
 
                     // Install response filter to capture response body
-                    if (LogResponseBody && context.Response.Filter != null)
+                    if (options!.EnableRequestResponseLogging && context.Response.Filter != null)
                     {
                         var responseFilter = new ResponseCaptureFilter(context.Response.Filter, context);
                         context.Response.Filter = responseFilter;
@@ -140,6 +251,10 @@ namespace mylogging.observability.Framework
                     // Add custom enrichment hook
                     EnrichActivity(activity, context, "OnBeginRequest");
                 }
+                else
+                {
+                    Trace.TraceError("Failed to create activity even with fallback mechanisms. OpenTelemetry may not be properly configured.");
+                }
             }
             catch (Exception ex)
             {
@@ -147,6 +262,75 @@ namespace mylogging.observability.Framework
                 Trace.TraceError($"WcfTelemetryHttpModule.OnBeginRequest error: {ex}");
             }
         }
+        /// <summary>
+        /// Extracts ClassName and OperationName from the request path
+        /// For WCF: /ServiceName.svc/operation => ClassName=ServiceName, OperationName=operation
+        /// For Web API: /api/controller/action => ClassName=controller, OperationName=action
+        /// </summary>
+        private void ParseClassAndOperationName(string path, out string? className, out string? operationName)
+        {
+            className = null;
+            operationName = null;
+
+            try
+            {
+                if (string.IsNullOrEmpty(path))
+                    return;
+
+                // Remove query string if present
+                var pathWithoutQuery = path.Split('?')[0];
+
+                // Split path into segments
+                var segments = pathWithoutQuery.Split(new[] { '/' }, StringSplitOptions.RemoveEmptyEntries);
+
+                if (segments.Length == 0)
+                    return;
+
+                // Handle WCF service path: /ServiceName.svc/operation
+                if (pathWithoutQuery.Contains(".svc"))
+                {
+                    for (int i = 0; i < segments.Length; i++)
+                    {
+                        if (segments[i].EndsWith(".svc", StringComparison.OrdinalIgnoreCase))
+                        {
+                            // Extract service name without .svc extension
+                            className = segments[i].Substring(0, segments[i].Length - 4);
+
+                            // Operation name is the next segment
+                            if (i + 1 < segments.Length)
+                            {
+                                operationName = segments[i + 1];
+                            }
+                            break;
+                        }
+                    }
+                }
+                // Handle Web API path: /api/controller/action
+                else if (pathWithoutQuery.ToLowerInvariant().StartsWith("/api/"))
+                {
+                    // segments[0] = "api", segments[1] = controller, segments[2] = action
+                    if (segments.Length >= 2)
+                    {
+                        className = segments[1]; // controller name
+                    }
+                    if (segments.Length >= 3)
+                    {
+                        operationName = segments[2]; // action name
+                    }
+                }
+                // Handle generic controller/action pattern
+                else if (segments.Length >= 2)
+                {
+                    className = segments[0];
+                    operationName = segments[1];
+                }
+            }
+            catch (Exception ex)
+            {
+                Debug.WriteLine($"Error parsing class and operation name from path '{path}': {ex.Message}");
+            }
+        }
+
 
         private void OnEndRequest(object sender, EventArgs e)
         {
@@ -159,29 +343,7 @@ namespace mylogging.observability.Framework
             try
             {
                 // Set response attributes
-                activity.SetTag("http.status_code", context.Response.StatusCode);
-
-                // Capture request body from context
-                var requestBody = context.Items[RequestBodyKey] as string;
-
-                // Capture response body from filter
-                string? responseBody = null;
-                var responseFilter = context.Items[ResponseFilterKey] as ResponseCaptureFilter;
-                if (responseFilter != null)
-                {
-                    responseBody = responseFilter.GetCapturedContent();
-                }
-
-                // Log request/response bodies
-                if (LogRequestBody && !string.IsNullOrEmpty(requestBody))
-                {
-                    LogRequestToActivity(activity, requestBody, context);
-                }
-
-                if (LogResponseBody && !string.IsNullOrEmpty(responseBody))
-                {
-                    LogResponseToActivity(activity, responseBody, context);
-                }
+                activity.SetTag("http.status_code", context.Response.StatusCode);               
 
                 // Determine activity status based on response
                 if (context.Response.StatusCode >= 400)
@@ -193,12 +355,7 @@ namespace mylogging.observability.Framework
                     activity.SetStatus(ActivityStatusCode.Ok);
                 }
 
-                // Check for SOAP faults in response
-                if (!string.IsNullOrEmpty(responseBody) &&
-                    context.Response.ContentType?.Contains("xml") == true)
-                {
-                    CheckForSoapFault(activity, responseBody);
-                }
+                
 
                 // Add custom enrichment hook
                 EnrichActivity(activity, context, "OnEndRequest");
@@ -207,11 +364,42 @@ namespace mylogging.observability.Framework
             {
                 activity.SetStatus(ActivityStatusCode.Error, ex.Message);
                 activity.AddException(ex);
+                Trace.TraceError($"WcfTelemetryHttpModule.OnEndRequest error: {ex}");
             }
             finally
             {
-                activity.Stop();
-                activity.Dispose();
+                // ✅ CRITICAL: Always dispose the activity, even if errors occurred
+                try
+                {
+                    // Capture request/response for logging BEFORE disposing activity
+                    var requestBody = context.Items[RequestBodyKey] as string;
+                    var responseFilter = context.Items[ResponseFilterKey] as ResponseCaptureFilter;
+                    var responseBody = responseFilter?.GetCapturedContent();
+
+                    // Log the complete request/response
+                    LogRequestResponse(context, activity, requestBody, responseBody);
+
+                    // Stop the activity (marks end time and duration)
+                    activity.Stop();
+
+                    // Dispose the activity (releases resources)
+                    activity.Dispose();
+
+                    // Clear the activity from context to prevent double-disposal
+                    context.Items.Remove(ActivityKey);
+
+                    // Reset Activity.Current if it's our activity to prevent memory leaks
+                    if (Activity.Current == activity)
+                    {
+                        Activity.Current = null;
+                    }
+                }
+                catch (Exception disposeEx)
+                {
+                    // Log but don't throw - disposal errors shouldn't break the pipeline
+                    Trace.TraceWarning($"Error disposing activity: {disposeEx.Message}");
+                    _logger.LogWarning(disposeEx, "Error disposing activity");
+                }
             }
         }
 
@@ -223,35 +411,43 @@ namespace mylogging.observability.Framework
             if (activity == null)
                 return;
 
-            var exception = context.Server.GetLastError();
-            if (exception != null)
+            try
             {
-                activity.SetStatus(ActivityStatusCode.Error, exception.Message);
-                activity.AddException(exception);
-
-                // Add exception details
-                activity.SetTag("error", true);
-                activity.SetTag("exception.type", exception.GetType().FullName);
-                activity.SetTag("exception.message", exception.Message);
-                activity.SetTag("exception.stacktrace", exception.StackTrace);
-
-                // Check for FaultException
-                if (exception is FaultException faultException)
+                var exception = context.Server.GetLastError();
+                if (exception != null)
                 {
-                    activity.SetTag("wcf.fault.code", faultException.Code?.Name);
-                    activity.SetTag("wcf.fault.reason", faultException.Reason?.ToString());
+                    activity.SetStatus(ActivityStatusCode.Error, exception.Message);
+                    activity.AddException(exception);
+
+                    // Add exception details
+                    activity.SetTag("error", true);
+                    activity.SetTag("exception.type", exception.GetType().FullName);
+                    activity.SetTag("exception.message", exception.Message);
+                    activity.SetTag("exception.stacktrace", exception.StackTrace);
+
+                    // Check for FaultException
+                    if (exception is FaultException faultException)
+                    {
+                        activity.SetTag("wcf.fault.code", faultException.Code?.Name);
+                        activity.SetTag("wcf.fault.reason", faultException.Reason?.ToString());
+                    }
+
+                    // Capture request body for error logging
+                    var requestBody = context.Items[RequestBodyKey] as string;
+
+                    // Log the error with full context
+                    LogErrorDetails(context, activity, exception, requestBody);
                 }
             }
+            catch (Exception ex)
+            {
+                // Log but don't throw - error handling shouldn't break the pipeline
+                Trace.TraceError($"WcfTelemetryHttpModule.OnError error: {ex}");
+                _logger.LogError(ex, "WcfTelemetryHttpModule.OnError error");
+            }
+            // ⚠️ IMPORTANT: Do NOT dispose activity here
+            // OnEndRequest will be called after OnError and will handle disposal
         }
-
-        private bool IsWcfRequest(HttpContext context)
-        {
-            // Check if it's a .svc endpoint or has SOAP content type
-            return context.Request.Path.Contains(".svc") ||
-                   context.Request.ContentType?.Contains("soap") == true ||
-                   context.Request.Headers["SOAPAction"] != null;
-        }
-
         private string? CaptureRequestBody(HttpRequest request)
         {
             try
@@ -280,167 +476,325 @@ namespace mylogging.observability.Framework
                 return null;
             }
         }
+        /// <summary>
+        /// Gets header value by checking multiple possible header names.
+        /// Returns the first non-empty value found.
+        /// </summary>
+        private string? GetHeaderValueWithFallback(HttpRequest request, string[] headerNames)
+        {
+            foreach (var headerName in headerNames)
+            {
+                var value = request.Headers[headerName];
+                if (!string.IsNullOrEmpty(value))
+                {
+                    return value;
+                }
+            }
+            return null;
+        }
 
-        private void LogRequestToActivity(Activity activity, string requestBody, HttpContext context)
+        /// <summary>
+        /// Extracts IDs from request body string (already captured)
+        /// </summary>
+        private void ExtractFromRequestBody(string body, string contentType, ref string? correlationId, ref string? consumerId, ref string? userId)
         {
             try
             {
-                // Truncate if too large
-                var logBody = requestBody.Length > MaxBodyLogSize
-                    ? requestBody.Substring(0, MaxBodyLogSize) + "... [truncated]"
-                    : requestBody;
-
-                // Sanitize sensitive data if enabled
-                if (SanitizeSensitiveData)
+                if (string.IsNullOrEmpty(body) || string.IsNullOrEmpty(contentType))
                 {
-                    logBody = SanitizeXml(logBody);
+                    return;
                 }
 
-                // Add as activity event with the body
-                var eventTags = new ActivityTagsCollection
-                    {
-                        { "message.type", "request" },
-                        { "message.size", requestBody.Length },
-                        { "message.content_type", context.Request.ContentType }
-                    };
+                contentType = contentType.ToLowerInvariant();
 
-                activity.AddEvent(new ActivityEvent("wcf.request", DateTimeOffset.UtcNow, eventTags));
-
-                // Store full body as tag (can be expensive, consider carefully)
-                activity.SetTag("wcf.request.body", logBody);
-
-                // Parse and extract parameter values if it's a SOAP request
-                if (context.Request.ContentType?.Contains("soap") == true)
+                // Handle JSON content
+                if (contentType.Contains("application/json"))
                 {
-                    ExtractSoapParameters(activity, requestBody, "request");
+                    ExtractFromJson(body, ref correlationId, ref consumerId, ref userId);
+                }
+                // Handle XML content
+                else if (contentType.Contains("application/xml") || contentType.Contains("text/xml"))
+                {
+                    ExtractFromXml(body, ref correlationId, ref consumerId, ref userId);
                 }
             }
             catch (Exception ex)
             {
-                Trace.TraceWarning($"Error logging request body: {ex.Message}");
+                Trace.TraceWarning($"Failed to extract IDs from request body: {ex.Message}");
+                Debug.WriteLine($"Warning: Failed to extract IDs from request body: {ex.Message}");
             }
         }
 
-        private void LogResponseToActivity(Activity activity, string responseBody, HttpContext context)
+        /// <summary>
+        /// Extract correlation IDs from JSON request body
+        /// </summary>
+        private void ExtractFromJson(string body, ref string? correlationId, ref string? consumerId, ref string? userId)
         {
             try
             {
-                // Truncate if too large
-                var logBody = responseBody.Length > MaxBodyLogSize
-                    ? responseBody.Substring(0, MaxBodyLogSize) + "... [truncated]"
-                    : responseBody;
+                var jsonObject = JObject.Parse(body);
 
-                // Sanitize sensitive data if enabled
-                if (SanitizeSensitiveData)
+                // Extract CorrelationId - check root level first with multiple name variations
+                if (string.IsNullOrEmpty(correlationId))
                 {
-                    logBody = SanitizeXml(logBody);
+                    correlationId = GetJsonPropertyValue(jsonObject,
+                        "CorrelationId", "correlationId", "Correlation-Id", "correlation-id",
+                        "X-Correlation-Id", "x-correlation-id");
+
+                    // If not found at root, check nested header/headers object
+                    if (string.IsNullOrEmpty(correlationId))
+                    {
+                        var headerObj = jsonObject["header"] ?? jsonObject["headers"] ??
+                                       jsonObject["Header"] ?? jsonObject["Headers"];
+
+                        if (headerObj != null && headerObj.Type == JTokenType.Object)
+                        {
+                            correlationId = GetJsonPropertyValue((JObject)headerObj,
+                                "CorrelationId", "correlationId", "Correlation-Id", "correlation-id",
+                                "X-Correlation-Id", "x-correlation-id");
+                        }
+                    }
                 }
 
-                // Add as activity event
-                var eventTags = new ActivityTagsCollection
-                    {
-                        { "message.type", "response" },
-                        { "message.size", responseBody.Length },
-                        { "message.content_type", context.Response.ContentType }
-                    };
-
-                activity.AddEvent(new ActivityEvent("wcf.response", DateTimeOffset.UtcNow, eventTags));
-
-                // Store full body as tag
-                activity.SetTag("wcf.response.body", logBody);
-                activity.SetTag("http.response_content_length", responseBody.Length);
-
-                // Parse and extract return values if it's a SOAP response
-                if (context.Response.ContentType?.Contains("soap") == true)
+                // Extract ConsumerId
+                if (string.IsNullOrEmpty(consumerId))
                 {
-                    ExtractSoapParameters(activity, responseBody, "response");
+                    consumerId = GetJsonPropertyValue(jsonObject,
+                        "ConsumerId", "consumerId", "Consumer-Id", "consumer-id",
+                        "X-Consumer-Id", "x-consumer-id");
+
+                    if (string.IsNullOrEmpty(consumerId))
+                    {
+                        var headerObj = jsonObject["header"] ?? jsonObject["headers"] ??
+                                       jsonObject["Header"] ?? jsonObject["Headers"];
+
+                        if (headerObj != null && headerObj.Type == JTokenType.Object)
+                        {
+                            consumerId = GetJsonPropertyValue((JObject)headerObj,
+                                "ConsumerId", "consumerId", "Consumer-Id", "consumer-id",
+                                "X-Consumer-Id", "x-consumer-id");
+                        }
+                    }
+                }
+
+                // Extract UserId
+                if (string.IsNullOrEmpty(userId))
+                {
+                    userId = GetJsonPropertyValue(jsonObject,
+                        "UserId", "userId", "User-Id", "user-id",
+                        "X-User-Id", "x-user-id");
+
+                    if (string.IsNullOrEmpty(userId))
+                    {
+                        var headerObj = jsonObject["header"] ?? jsonObject["headers"] ??
+                                       jsonObject["Header"] ?? jsonObject["Headers"];
+
+                        if (headerObj != null && headerObj.Type == JTokenType.Object)
+                        {
+                            userId = GetJsonPropertyValue((JObject)headerObj,
+                                "UserId", "userId", "User-Id", "user-id",
+                                "X-User-Id", "x-user-id");
+                        }
+                    }
                 }
             }
             catch (Exception ex)
             {
-                Trace.TraceWarning($"Error logging response body: {ex.Message}");
+                Trace.TraceWarning($"Failed to parse JSON body: {ex.Message}");
             }
         }
 
-        private string SanitizeXml(string xml)
+        /// <summary>
+        /// Helper method to get JSON property value by checking multiple property names
+        /// </summary>
+        private string? GetJsonPropertyValue(JObject jsonObject, params string[] propertyNames)
         {
-            // List of common sensitive field names to redact
-            var sensitiveFields = new[]
+            foreach (var propName in propertyNames)
             {
-                    "password", "pwd", "secret", "token", "apikey", "api_key",
-                    "creditcard", "ssn", "authorization", "bearer"
+                var value = jsonObject[propName]?.ToString();
+                if (!string.IsNullOrEmpty(value))
+                {
+                    return value;
+                }
+            }
+            return null;
+        }
+
+        /// <summary>
+        /// Extract correlation IDs from XML request body
+        /// </summary>
+        private void ExtractFromXml(string body, ref string? correlationId, ref string? consumerId, ref string? userId)
+        {
+            try
+            {
+                var doc = XDocument.Parse(body);
+                var root = doc.Root;
+
+                if (root == null)
+                {
+                    return;
+                }
+
+                // Extract CorrelationId
+                if (string.IsNullOrEmpty(correlationId))
+                {
+                    correlationId = GetXmlElementValue(root,
+                        "CorrelationId", "correlationId", "Correlation-Id", "correlation-id",
+                        "X-Correlation-Id", "x-correlation-id");
+
+                    if (string.IsNullOrEmpty(correlationId))
+                    {
+                        var headerElement = root.Element("Header") ?? root.Element("header") ??
+                                          root.Element("Headers") ?? root.Element("headers");
+
+                        if (headerElement != null)
+                        {
+                            correlationId = GetXmlElementValue(headerElement,
+                                "CorrelationId", "correlationId", "Correlation-Id", "correlation-id",
+                                "X-Correlation-Id", "x-correlation-id");
+                        }
+                    }
+                }
+
+                // Extract ConsumerId
+                if (string.IsNullOrEmpty(consumerId))
+                {
+                    consumerId = GetXmlElementValue(root,
+                        "ConsumerId", "consumerId", "Consumer-Id", "consumer-id",
+                        "X-Consumer-Id", "x-consumer-id");
+
+                    if (string.IsNullOrEmpty(consumerId))
+                    {
+                        var headerElement = root.Element("Header") ?? root.Element("header") ??
+                                          root.Element("Headers") ?? root.Element("headers");
+
+                        if (headerElement != null)
+                        {
+                            consumerId = GetXmlElementValue(headerElement,
+                                "ConsumerId", "consumerId", "Consumer-Id", "consumer-id",
+                                "X-Consumer-Id", "x-consumer-id");
+                        }
+                    }
+                }
+
+                // Extract UserId
+                if (string.IsNullOrEmpty(userId))
+                {
+                    userId = GetXmlElementValue(root,
+                        "UserId", "userId", "User-Id", "user-id",
+                        "X-User-Id", "x-user-id");
+
+                    if (string.IsNullOrEmpty(userId))
+                    {
+                        var headerElement = root.Element("Header") ?? root.Element("header") ??
+                                          root.Element("Headers") ?? root.Element("headers");
+
+                        if (headerElement != null)
+                        {
+                            userId = GetXmlElementValue(headerElement,
+                                "UserId", "userId", "User-Id", "user-id",
+                                "X-User-Id", "x-user-id");
+                        }
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                Trace.TraceWarning($"Failed to parse XML body: {ex.Message}");
+            }
+        }
+
+        /// <summary>
+        /// Helper method to get XML element value
+        /// </summary>
+        private string? GetXmlElementValue(XElement parent, params string[] elementNames)
+        {
+            foreach (var elemName in elementNames)
+            {
+                var value = parent.Element(elemName)?.Value;
+                if (!string.IsNullOrEmpty(value))
+                {
+                    return value;
+                }
+            }
+            return null;
+        }
+        
+
+        /// <summary>
+        /// Determines if the request should be excluded from logging
+        /// </summary>
+        private bool ShouldSkipLogging(HttpRequest request)
+        {
+            var options = WcfTelemetryConfiguration.Options;
+
+            // If no options configured, use default behavior
+            if (options?.RequestResponseLogging == null)
+            {
+                return false;
+            }
+
+            var path = request.RawUrl.ToLowerInvariant();
+            var contentType = request.ContentType?.ToLowerInvariant() ?? string.Empty;
+            var acceptHeader = request.Headers["Accept"]?.ToLowerInvariant() ?? string.Empty;
+
+            // Check excluded paths from configuration
+            if (options.RequestResponseLogging.ExcludePaths != null && options.RequestResponseLogging.ExcludePaths.Any())
+            {
+                if (options.RequestResponseLogging.ExcludePaths.Any(excluded =>
+                    path.Contains(excluded.ToLowerInvariant())))
+                {
+                    return true;
+                }
+            }
+            else
+            {
+                // Use default excluded paths if none configured
+                var excludedPaths = new[]
+                {
+                    "/home", "/home/index", "/help", "/areas/helppage", "/content/",
+                    "/scripts/", "/bundles/", "/fonts/", "/images/", "/favicon.ico",
+                    "/__browserlink", "/trace.axd", "/glimpse.axd"
                 };
 
-            foreach (var field in sensitiveFields)
-            {
-                // Simple regex replacement for XML elements (case-insensitive)
-                var pattern = $@"(<{field}[^>]*>)(.*?)(</{field}>)";
-                xml = System.Text.RegularExpressions.Regex.Replace(
-                    xml,
-                    pattern,
-                    "$1***REDACTED***$3",
-                    System.Text.RegularExpressions.RegexOptions.IgnoreCase);
-            }
-
-            return xml;
-        }
-
-        private void ExtractSoapParameters(Activity activity, string soapBody, string direction)
-        {
-            try
-            {
-                using (var stringReader = new StringReader(soapBody))
-                using (var reader = XmlReader.Create(stringReader, new XmlReaderSettings
+                if (excludedPaths.Any(excluded => path.StartsWith(excluded) || path.Contains(excluded)))
                 {
-                    IgnoreWhitespace = true,
-                    IgnoreComments = true
-                }))
-                {
-                    var parameters = new Dictionary<string, string>();
-                    bool inBody = false;
-                    bool inOperation = false;
-                    string? currentElement = null;
-
-                    while (reader.Read())
-                    {
-                        if (reader.NodeType == XmlNodeType.Element)
-                        {
-                            if (reader.LocalName == "Body")
-                            {
-                                inBody = true;
-                            }
-                            else if (inBody && !inOperation)
-                            {
-                                inOperation = true;
-                                currentElement = reader.LocalName;
-                            }
-                            else if (inOperation && reader.Depth > 2)
-                            {
-                                currentElement = reader.LocalName;
-                            }
-                        }
-                        else if (reader.NodeType == XmlNodeType.Text && inOperation && currentElement != null)
-                        {
-                            var value = reader.Value;
-                            if (!string.IsNullOrWhiteSpace(value) && value.Length < 1000)
-                            {
-                                parameters[currentElement] = value;
-                            }
-                        }
-                    }
-
-                    // Add parameters as tags
-                    foreach (var param in parameters.Take(10)) // Limit to 10 parameters
-                    {
-                        activity.SetTag($"wcf.{direction}.param.{param.Key}", param.Value);
-                    }
+                    return true;
                 }
             }
-            catch (Exception ex)
+
+            // Skip if requesting HTML pages
+            if (acceptHeader.Contains("text/html"))
             {
-                Trace.TraceWarning($"Error extracting SOAP parameters: {ex.Message}");
+                return true;
             }
+
+            // Skip static file extensions
+            var staticExtensions = new[] { ".css", ".js", ".jpg", ".jpeg", ".png", ".gif", ".ico",
+                                              ".woff", ".woff2", ".ttf", ".eot", ".svg", ".map", ".html", ".htm" };
+
+            if (staticExtensions.Any(ext => path.EndsWith(ext)))
+            {
+                return true;
+            }
+
+            // Skip if response content type is HTML
+            if (contentType.Contains("text/html"))
+            {
+                return true;
+            }
+
+            // Log only API requests
+            bool isApiRequest = path.Contains(".svc") ||
+                               path.StartsWith("/api/") ||
+                               acceptHeader.Contains("application/json") ||
+                               acceptHeader.Contains("application/xml") ||
+                               contentType.Contains("application/json") ||
+                               contentType.Contains("application/xml");
+
+            return !isApiRequest;
         }
+
 
         private IEnumerable<string> ExtractTraceContext(HttpRequest request, string key)
         {
@@ -449,112 +803,221 @@ namespace mylogging.observability.Framework
             return values ?? Enumerable.Empty<string>();
         }
 
-        private WcfRequestInfo ExtractWcfInformation(HttpContext context, string? requestBody)
+        /// <summary>
+        /// Checks if logging should occur based on configuration
+        /// </summary>
+        private bool ShouldLog(HttpContext context)
         {
-            var info = new WcfRequestInfo();
-
-            try
+            var options = WcfTelemetryConfiguration.Options;
+            
+            // Check if logging is enabled
+            if (options?.EnableRequestResponseLogging == false)
+                return false;
+                
+            // Check if path is excluded
+            if (options?.RequestResponseLogging?.ExcludePaths != null)
             {
-                // Extract from URL
-                var path = context.Request.Path;
-                if (path.EndsWith(".svc", StringComparison.OrdinalIgnoreCase))
+                var path = context.Request.RawUrl.ToLowerInvariant();
+                if (options.RequestResponseLogging.ExcludePaths.Any(excluded =>
+                    path.Contains(excluded.ToLowerInvariant())))
                 {
-                    var parts = path.Split('/');
-                    info.ServiceName = parts.LastOrDefault()?.Replace(".svc", "") ?? string.Empty;
-                }
-
-                // Extract SOAP Action
-                info.SoapAction = context.Request.Headers["SOAPAction"]?.Trim('"') ?? string.Empty;
-
-                // Try to parse operation name from SOAP action
-                if (!string.IsNullOrEmpty(info.SoapAction))
-                {
-                    var lastSlash = info.SoapAction.LastIndexOf('/');
-                    if (lastSlash >= 0)
-                    {
-                        info.OperationName = info.SoapAction.Substring(lastSlash + 1);
-                    }
-                }
-
-                // Detect binding type from request
-                if (context.Request.Url.Scheme == "https")
-                    info.Binding = "BasicHttpsBinding";
-                else if (context.Request.ContentType?.Contains("soap") == true)
-                    info.Binding = "BasicHttpBinding";
-                else
-                    info.Binding = "WebHttpBinding";
-
-                // Try to extract more details from SOAP envelope (use captured body)
-                if (!string.IsNullOrEmpty(requestBody) &&
-                    context.Request.ContentType?.Contains("soap") == true)
-                {
-                    using (var stringReader = new StringReader(requestBody))
-                    using (var reader = XmlReader.Create(stringReader, new XmlReaderSettings
-                    {
-                        IgnoreWhitespace = true,
-                        IgnoreComments = true
-                    }))
-                    {
-                        while (reader.Read())
-                        {
-                            if (reader.NodeType == XmlNodeType.Element &&
-                                reader.LocalName != "Envelope" &&
-                                reader.LocalName != "Header" &&
-                                reader.LocalName != "Body")
-                            {
-                                info.OperationName = reader.LocalName;
-                                info.ContractName = reader.NamespaceURI;
-                                break;
-                            }
-                        }
-                    }
+                    return false;
                 }
             }
-            catch (Exception ex)
-            {
-                Trace.TraceWarning($"Error extracting WCF information: {ex.Message}");
-            }
-
-            return info;
+            
+            return true;
         }
 
-        private void CheckForSoapFault(Activity activity, string responseBody)
+        /// <summary>
+        /// Logs successful request/response with all details
+        /// </summary>
+        private void LogRequestResponse(HttpContext context, Activity activity, string? requestBody, string? responseBody)
         {
             try
             {
-                if (responseBody.Contains("Fault") || responseBody.Contains("fault"))
+                if (!ShouldLog(context))
+                    return;
+
+                var startTime = context.Items[RequestStartTimeKey] as DateTime? ?? DateTime.UtcNow;
+                var executionTime = (DateTime.UtcNow - startTime).TotalMilliseconds;
+
+                var correlationId = context.Items["CorrelationId"] as string ?? "N/A";
+                var consumerId = context.Items["ConsumerId"] as string ?? "unknown";
+                var userId = context.Items["UserId"] as string ?? "anonymous";
+                var className = context.Items["ClassName"] as string ?? "Unknown";
+                var operationName = context.Items["OperationName"] as string ?? className;
+
+                // Prepare headers for logging
+                var requestHeaders = new Dictionary<string, string>();
+                foreach (var key in context.Request.Headers.AllKeys)
                 {
-                    using (var stringReader = new StringReader(responseBody))
-                    using (var reader = XmlReader.Create(stringReader))
+                    if (key != null)
                     {
-                        while (reader.Read())
-                        {
-                            if (reader.NodeType == XmlNodeType.Element &&
-                                (reader.LocalName == "Fault" || reader.LocalName == "fault"))
-                            {
-                                activity.SetTag("wcf.soap_fault", true);
-                                activity.SetStatus(ActivityStatusCode.Error, "SOAP Fault");
-
-                                // Try to extract fault details
-                                var faultDoc = new XmlDocument();
-                                faultDoc.Load(new StringReader(responseBody));
-                                var faultCode = faultDoc.SelectSingleNode("//*[local-name()='faultcode']")?.InnerText;
-                                var faultString = faultDoc.SelectSingleNode("//*[local-name()='faultstring']")?.InnerText;
-
-                                if (!string.IsNullOrEmpty(faultCode))
-                                    activity.SetTag("wcf.fault.code", faultCode);
-                                if (!string.IsNullOrEmpty(faultString))
-                                    activity.SetTag("wcf.fault.string", faultString);
-
-                                break;
-                            }
-                        }
+                        requestHeaders[key] = context.Request.Headers[key];
                     }
                 }
+
+                var responseHeaders = new Dictionary<string, string>();
+                foreach (var key in context.Response.Headers.AllKeys)
+                {
+                    if (key != null)
+                    {
+                        responseHeaders[key] = context.Response.Headers[key];
+                    }
+                }
+
+                // Create structured log object
+                var logEntry = new
+                {
+                    LogType = "RequestResponse",
+                    CorrelationId = correlationId,
+                    ConsumerId = consumerId,
+                    UserId = userId,
+                    ClassName = className,
+                    OperationName = operationName,
+                    ExecutionTimeMs = executionTime,
+                    Request = new
+                    {
+                        Timestamp = startTime,
+                        Method = context.Request.HttpMethod,
+                        Path = context.Request.RawUrl,
+                        QueryString = context.Request.QueryString.ToString(),
+                        ContentType = context.Request.ContentType,
+                        Headers = requestHeaders,
+                        Body = requestBody
+                    },
+                    Response = new
+                    {
+                        Timestamp = DateTime.UtcNow,
+                        StatusCode = context.Response.StatusCode,
+                        StatusDescription = context.Response.StatusDescription,
+                        ContentType = context.Response.ContentType,
+                        Headers = responseHeaders,
+                        Body = responseBody
+                    }
+                };
+
+                var logMessage = JsonConvert.SerializeObject(logEntry, Newtonsoft.Json.Formatting.Indented);
+
+                // Log as Information level
+                _logger.LogInformation(
+                    "RequestResponse: {ClassName}.{OperationName} | CorrelationId: {CorrelationId} | ConsumerId: {ConsumerId} | UserId: {UserId} | " +
+                    "ExecutionTime: {ExecutionTime}ms | {Method} {Path} | StatusCode: {StatusCode} | " +
+                    "TraceId: {TraceId} | SpanId: {SpanId}",
+                    className,
+                    operationName,
+                    correlationId,
+                    consumerId,
+                    userId,
+                    executionTime,
+                    context.Request.HttpMethod,
+                    context.Request.RawUrl,
+                    context.Response.StatusCode,
+                    activity?.TraceId.ToString() ?? "N/A",
+                    activity?.SpanId.ToString() ?? "N/A");
+
+                // Log detailed JSON for debugging
+                _logger.LogDebug("RequestResponse Details: {LogDetails}", logMessage);
+
+                // Also write to Trace
+                Trace.TraceInformation(logMessage);
             }
             catch (Exception ex)
             {
-                Trace.TraceWarning($"Error checking for SOAP fault: {ex.Message}");
+                _logger.LogError(ex, "Error logging request/response");
+                Trace.TraceError($"Error logging request/response: {ex}");
+            }
+        }
+
+        /// <summary>
+        /// Logs error with request details
+        /// </summary>
+        private void LogErrorDetails(HttpContext context, Activity? activity, Exception exception, string? requestBody)
+        {
+            try
+            {
+                if (!ShouldLog(context))
+                    return;
+
+                var startTime = context.Items[RequestStartTimeKey] as DateTime? ?? DateTime.UtcNow;
+                var executionTime = (DateTime.UtcNow - startTime).TotalMilliseconds;
+
+                var correlationId = context.Items["CorrelationId"] as string ?? "N/A";
+                var consumerId = context.Items["ConsumerId"] as string ?? "unknown";
+                var userId = context.Items["UserId"] as string ?? "anonymous";
+                var className = context.Items["ClassName"] as string ?? "Unknown";
+                var operationName = context.Items["OperationName"] as string ?? className;
+
+                // Prepare headers for logging
+                var requestHeaders = new Dictionary<string, string>();
+                foreach (var key in context.Request.Headers.AllKeys)
+                {
+                    if (key != null)
+                    {
+                        requestHeaders[key] = context.Request.Headers[key];
+                    }
+                }
+
+                // Create structured error log object
+                var errorEntry = new
+                {
+                    LogType = "Error",
+                    CorrelationId = correlationId,
+                    ConsumerId = consumerId,
+                    UserId = userId,
+                    ClassName = className,
+                    OperationName = operationName,
+                    ExecutionTimeMs = executionTime,
+                    Request = new
+                    {
+                        Timestamp = startTime,
+                        Method = context.Request.HttpMethod,
+                        Path = context.Request.RawUrl,
+                        QueryString = context.Request.QueryString.ToString(),
+                        ContentType = context.Request.ContentType,
+                        Headers = requestHeaders,
+                        Body = requestBody
+                    },
+                    Error = new
+                    {
+                        Timestamp = DateTime.UtcNow,
+                        Message = exception.Message,
+                        Type = exception.GetType().Name,
+                        StackTrace = exception.StackTrace,
+                        InnerException = exception.InnerException?.Message,
+                        Source = exception.Source
+                    }
+                };
+
+                var logMessage = JsonConvert.SerializeObject(errorEntry, Newtonsoft.Json.Formatting.Indented);
+
+                // Log as Error level with structured data
+                _logger.LogError(exception,
+                    "Error: {ClassName}.{OperationName} | CorrelationId: {CorrelationId} | ConsumerId: {ConsumerId} | UserId: {UserId} | " +
+                    "ExecutionTime: {ExecutionTime}ms | {Method} {Path} | ExceptionType: {ExceptionType} | " +
+                    "TraceId: {TraceId} | SpanId: {SpanId}",
+                    className,
+                    operationName,
+                    correlationId,
+                    consumerId,
+                    userId,
+                    executionTime,
+                    context.Request.HttpMethod,
+                    context.Request.RawUrl,
+                    exception.GetType().Name,
+                    activity?.TraceId.ToString() ?? "N/A",
+                    activity?.SpanId.ToString() ?? "N/A");
+
+                // Log detailed JSON for debugging
+                _logger.LogDebug("Error Details: {ErrorDetails}", logMessage);
+
+                // Also write to Trace
+                Trace.TraceError(logMessage);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error logging error details");
+                Trace.TraceError($"Error logging error details: {ex}");
             }
         }
 
@@ -572,7 +1035,16 @@ namespace mylogging.observability.Framework
         /// </summary>
         public void Dispose()
         {
-            // Cleanup if needed
+            try
+            {
+                _activitySource?.Dispose();
+                _activitySource = null;
+                _logger?.LogInformation("WcfTelemetryHttpModule disposed");
+            }
+            catch (Exception ex)
+            {
+                Trace.TraceWarning($"Error disposing WcfTelemetryHttpModule: {ex.Message}");
+            }
         }
 
         private class WcfRequestInfo

@@ -11,6 +11,16 @@ namespace mylogging.observability.Common
         public string ServiceName { get; set; } = "MyApplication";
 
         /// <summary>
+        /// Gets or sets the application name.
+        /// </summary>
+        public string ApplicationName { get; set; } = "MyApplication";
+
+        /// <summary>
+        /// Gets or sets the business process name.
+        /// </summary>
+        public string BusinessProcess { get; set; } = "MyBusinessProcess";
+
+        /// <summary>
         /// Gets or sets the version of the service.
         /// </summary>
         public string ServiceVersion { get; set; } = "1.0.0";
@@ -54,6 +64,11 @@ namespace mylogging.observability.Common
         /// Gets or sets the exporter configuration options.
         /// </summary>
         public ExporterOptions? Exporter { get; set; } = new ExporterOptions();
+
+        /// <summary>
+        /// Gets or sets the Splunk exporter configuration options.
+        /// </summary>
+        public SplunkExporter? SplunkExporter { get; set; } = new SplunkExporter();
 
         /// <summary>
         /// Gets or sets the redaction configuration options.
@@ -125,7 +140,7 @@ namespace mylogging.observability.Common
         /// <summary>
         /// Gets or sets the text to replace redacted values with.
         /// </summary>
-        public string RedactionText { get; set; } = "[REDACTED]";
+        public string RedactionText { get; set; } = "[REDACTED]" ;
 
         /// <summary>
         /// Gets or sets a value indicating whether to redact sensitive headers.
@@ -193,6 +208,45 @@ namespace mylogging.observability.Common
                 "text/plain",
                 "text/xml"
             };
+
+        /// <summary>
+        /// Gets or sets the list of correlation ID header names to check.
+        /// </summary>
+        public List<string> CorrelationIdHeaders { get; set; } = new List<string>
+        {
+            "X-Correlation-Id",
+            "CorrelationId",
+            "x-correlation-id",
+            "correlationId",
+            "Correlation-Id",
+            "correlation-id"
+        };
+
+        /// <summary>
+        /// Gets or sets the list of consumer ID header names to check.
+        /// </summary>
+        public List<string> ConsumerIdHeaders { get; set; } = new List<string>
+        {
+            "X-Consumer-Id",
+            "ConsumerId",
+            "x-consumer-id",
+            "consumerId",
+            "Consumer-Id",
+            "consumer-id"
+        };
+
+        /// <summary>
+        /// Gets or sets the list of user ID header names to check.
+        /// </summary>
+        public List<string> UserIdHeaders { get; set; } = new List<string>
+        {
+            "X-User-Id",
+            "UserId",
+            "x-user-id",
+            "userId",
+            "User-Id",
+            "user-id"
+        };
     }
 
     /// <summary>
@@ -316,6 +370,67 @@ namespace mylogging.observability.Common
         /// Gets or sets category-specific log levels.
         /// </summary>
         public Dictionary<string, Microsoft.Extensions.Logging.LogLevel> CategoryLevels { get; set; } = new Dictionary<string, Microsoft.Extensions.Logging.LogLevel>();
+    }
+
+    /// <summary>
+    /// Configuration options for Splunk telemetry data exporter.
+    /// </summary>
+    public class SplunkExporter
+    {
+        /// <summary>
+        /// Gets or sets the Splunk HTTP Event Collector (HEC) endpoint URL.
+        /// </summary>
+        public string Url { get; set; } = "http://localhost:8088";
+
+        /// <summary>
+        /// Gets or sets the Splunk authentication token.
+        /// </summary>
+        public string Token { get; set; } = "your-splunk-token";
+
+        /// <summary>
+        /// Gets or sets the source value for Splunk events.
+        /// </summary>
+        public string Source { get; set; } = "my-application";
+
+        /// <summary>
+        /// Gets or sets the sourcetype value for Splunk events.
+        /// </summary>
+        public string Sourcetype { get; set; } = "_json";
+
+        /// <summary>
+        /// Gets or sets a value indicating whether the exporter is used in batch job mode.
+        /// </summary>
+        public bool IsBatchJob { get; set; } = true;
+
+        /// <summary>
+        /// Gets or sets the Splunk index to send events to.
+        /// </summary>
+        public string Index { get; set; } = "main";
+
+        /// <summary>
+        /// Gets or sets the maximum queue size for the exporter.
+        /// </summary>
+        public int maxQueueSize { get; set; } = 2048;
+
+        /// <summary>
+        /// Gets or sets the maximum export batch size for the exporter.
+        /// </summary>
+        public int maxExportBatchSize { get; set; } = 512;
+
+        /// <summary>
+        /// Gets or sets the scheduled delay in milliseconds for batch exporting.
+        /// </summary>
+        public int scheduledDelayMilliseconds { get; set; } = 5000;
+
+        /// <summary>
+        /// Gets or sets the timeout for exporting telemetry data to Splunk.
+        /// </summary>
+        public TimeSpan ExportTimeout { get; set; } = TimeSpan.FromSeconds(30);
+
+        /// <summary>
+        /// Gets or sets the host value for Splunk events.
+        /// </summary>
+        public string? Host { get; set; }
     }
 
     /// <summary>
