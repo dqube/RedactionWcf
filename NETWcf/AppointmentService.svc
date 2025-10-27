@@ -1,1 +1,1 @@
-<%@ ServiceHost Language="C#" Service="RedactionWcf.Services.AppointmentService" Factory="mylogging.observability.Framework.LoggingWebServiceHostFactory" %>
+<%@ ServiceHost Language="C#" Service="RedactionWcf.Services.AppointmentService" %>

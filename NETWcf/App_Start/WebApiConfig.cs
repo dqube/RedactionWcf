@@ -1,8 +1,4 @@
-﻿using mylogging.observability.Framework;
-using System.Collections.Generic;
-using System.Diagnostics;
-using System.Linq;
-using System.Web.Http;
+﻿using System.Web.Http;
 
 namespace RedactionWcf
 {
@@ -10,10 +6,7 @@ namespace RedactionWcf
     {
         public static void Register(HttpConfiguration config)
         {
-            // Add Web API message handler for response body capture
-            config.MessageHandlers.Add(new WebApiLoggingHandler());
-
-            // Web API configuration and services
+           
 
             // Web API routes
             config.MapHttpAttributeRoutes();

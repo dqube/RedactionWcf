@@ -11,7 +11,6 @@ using System.Collections.Generic;
 using System.Diagnostics;
 using System.IO;
 using System.Linq;
-using System.ServiceModel;
 using System.Text;
 using System.Web;
 using System.Xml;
@@ -423,14 +422,7 @@ namespace mylogging.observability.Framework
                     activity.SetTag("error", true);
                     activity.SetTag("exception.type", exception.GetType().FullName);
                     activity.SetTag("exception.message", exception.Message);
-                    activity.SetTag("exception.stacktrace", exception.StackTrace);
-
-                    // Check for FaultException
-                    if (exception is FaultException faultException)
-                    {
-                        activity.SetTag("wcf.fault.code", faultException.Code?.Name);
-                        activity.SetTag("wcf.fault.reason", faultException.Reason?.ToString());
-                    }
+                    activity.SetTag("exception.stacktrace", exception.StackTrace);                   
 
                     // Capture request body for error logging
                     var requestBody = context.Items[RequestBodyKey] as string;

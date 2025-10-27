@@ -28,10 +28,7 @@
    
     <PackageReference Include="System.Diagnostics.DiagnosticSource" Version="9.0.1" />
     <Reference Include="System.Web" />
-    <Reference Include="System.ServiceModel" />
-    <Reference Include="System.ServiceModel.Activation" />
     <Reference Include="System.Configuration" />
-    <Reference Include="System.ServiceModel.Web" />
     <Reference Include="System.Net.Http" />
   </ItemGroup>
 
