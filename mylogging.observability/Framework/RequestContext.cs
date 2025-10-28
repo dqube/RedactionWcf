@@ -3,7 +3,7 @@
 using System;
 using System.Web;
 
-namespace mylogging.observability.Framework
+namespace mylogging.observability
 {
     /// <summary>
     /// Context information for tracking requests across the application

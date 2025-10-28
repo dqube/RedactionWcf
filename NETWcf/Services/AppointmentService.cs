@@ -1,4 +1,4 @@
-using mylogging.observability.Framework;
+using mylogging.observability;
 using RedactionWcf.Models;
 using System;
 using System.Collections.Generic;

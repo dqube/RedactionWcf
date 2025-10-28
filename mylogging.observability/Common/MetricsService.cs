@@ -1,6 +1,6 @@
 ﻿using System.Diagnostics.Metrics;
 
-namespace mylogging.observability.Common
+namespace mylogging.observability
 {
     /// <summary>
     /// Provides methods for recording metrics such as counters, histograms, gauges, and up-down counters.

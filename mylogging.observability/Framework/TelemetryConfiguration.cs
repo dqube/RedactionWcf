@@ -6,7 +6,7 @@ using OpenTelemetry;
 using OpenTelemetry.Resources;
 using OpenTelemetry.Trace;
 
-namespace mylogging.observability.Framework
+namespace mylogging.observability
 {
     /// <summary>
     /// Configuration helper for setting up the TracerProvider

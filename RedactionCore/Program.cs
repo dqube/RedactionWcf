@@ -1,4 +1,4 @@
-using mylogging.observability.Core;
+using mylogging.observability;
 using RedactionCore.Middleware;
 
 namespace RedactionCore

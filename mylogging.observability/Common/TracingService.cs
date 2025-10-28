@@ -1,6 +1,6 @@
 ﻿using System.Diagnostics;
 
-namespace mylogging.observability.Common
+namespace mylogging.observability
 {
     /// <summary>
     /// Provides tracing capabilities for distributed telemetry.

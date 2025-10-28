@@ -1,4 +1,4 @@
-namespace mylogging.observability.Common
+namespace mylogging.observability
 {
     /// <summary>
     /// Configuration options for observability features including tracing, metrics, and logging.
@@ -48,7 +48,7 @@ namespace mylogging.observability.Common
         /// <summary>
         /// Gets or sets the minimum log severity level.
         /// </summary>
-        public LogSeverity LogLevel { get; set; } = LogSeverity.Information;
+        public ObservabilityLogSeverity LogLevel { get; set; } = ObservabilityLogSeverity.Information;
 
         /// <summary>
         /// Gets or sets the batch size for exporting telemetry data.
@@ -436,7 +436,7 @@ namespace mylogging.observability.Common
     /// <summary>
     /// Defines log severity levels for filtering and categorization.
     /// </summary>
-    public enum LogSeverity
+    public enum ObservabilityLogSeverity
     {
         /// <summary>
         /// Trace level logging - most detailed.

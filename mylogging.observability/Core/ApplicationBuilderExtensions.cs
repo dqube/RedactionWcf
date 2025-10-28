@@ -1,6 +1,6 @@
 #if NET8_0
 using Microsoft.AspNetCore.Builder;
-using mylogging.observability.Core;
+using mylogging.observability;
 
 
 namespace mylogging.Extensions

@@ -2,7 +2,7 @@
 using System;
 using System.Web;
 
-namespace mylogging.observability.Framework
+namespace mylogging.observability
 {
     /// <summary>
     /// Helper class to access correlation context from both WCF services and Web API controllers

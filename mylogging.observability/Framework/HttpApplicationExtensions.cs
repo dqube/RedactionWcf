@@ -1,7 +1,7 @@
 #if NET48_OR_GREATER
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
-using mylogging.observability.Common;
+using mylogging.observability;
 using System.Web;
 
 namespace mylogging.Extensions

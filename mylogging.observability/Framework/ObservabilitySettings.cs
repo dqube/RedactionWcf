@@ -5,9 +5,8 @@ using System.Collections.Generic;
 using System.Configuration;
 using System.ComponentModel;
 using System.Linq;
-using mylogging.observability.Common;
 
-namespace mylogging.observability.Framework
+namespace mylogging.observability
 {
     /// <summary>
     /// Configuration section for observability features including tracing, metrics, and logging.
@@ -105,11 +104,11 @@ namespace mylogging.observability.Framework
         /// <summary>
         /// Gets or sets the minimum log severity level.
         /// </summary>
-        [ConfigurationProperty("logLevel", DefaultValue = LogSeverity.Information)]
+        [ConfigurationProperty("logLevel", DefaultValue = ObservabilitySettingsLogSeverity.Information)]
         [Description("The minimum log severity level.")]
-        public LogSeverity LogLevel
+        public ObservabilitySettingsLogSeverity LogLevel
         {
-            get => (LogSeverity)this["logLevel"];
+            get => (ObservabilitySettingsLogSeverity)this["logLevel"];
             set => this["logLevel"] = value;
         }
 
@@ -238,7 +237,7 @@ namespace mylogging.observability.Framework
                 ServiceInstanceId = this.ServiceInstanceId,
                 EnableRequestResponseLogging = this.EnableRequestResponseLogging,
                 EnableRedaction = this.EnableRedaction,
-                LogLevel = (Common.LogSeverity)this.LogLevel,
+                LogLevel = (ObservabilityLogSeverity)this.LogLevel,
                 ExportBatchSize = this.ExportBatchSize,
                 ExportTimeout = TimeSpan.FromSeconds(this.ExportTimeoutSeconds),
                 Exporter = this.Exporter != null ? new ExporterOptions
@@ -284,7 +283,7 @@ namespace mylogging.observability.Framework
                     // NEW: Add correlation header mappings
                     CorrelationIdHeaders = this.RequestResponseLogging.CorrelationIdHeaders?.Cast<string>().ToList() ?? new List<string>
                     {
-                        "X-Correlation-Id", "CorrelationId", "x-correlation-id", 
+                        "X-Correlation-Id", "CorrelationId", "x-correlation-id",
                         "correlationId", "Correlation-Id", "correlation-id"
                     },
                     ConsumerIdHeaders = this.RequestResponseLogging.ConsumerIdHeaders?.Cast<string>().ToList() ?? new List<string>
@@ -307,7 +306,7 @@ namespace mylogging.observability.Framework
                     RecordException = this.Tracing.RecordException,
                     ActivitySources = this.Tracing.ActivitySources?.Cast<string>().ToList() ?? new List<string>(),
                     MaxTagValueLength = this.Tracing.MaxTagValueLength,
-                    MaxEventCount = this.Tracing.MaxEventCount, 
+                    MaxEventCount = this.Tracing.MaxEventCount,
                     MaxLinkCount = this.Tracing.MaxLinkCount,
                     MaxTagCount = this.Tracing.MaxTagCount
                 } : null!,
@@ -1073,11 +1072,10 @@ namespace mylogging.observability.Framework
                 yield return (KeyValueConfigurationElement)BaseGet(key);
         }
     }
-
     /// <summary>
     /// Defines log severity levels for filtering and categorization.
     /// </summary>
-    public enum LogSeverity
+    public enum ObservabilitySettingsLogSeverity
     {
         /// <summary>
         /// Trace level logging - most detailed.
@@ -1114,5 +1112,6 @@ namespace mylogging.observability.Framework
         /// </summary>
         None = 6
     }
+
 }
 #endif

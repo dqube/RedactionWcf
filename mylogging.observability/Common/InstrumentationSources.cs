@@ -1,7 +1,7 @@
 ﻿using System.Diagnostics;
 using System.Diagnostics.Metrics;
 
-namespace mylogging.observability.Common
+namespace mylogging.observability
 {
     /// <summary>
     /// Provides centralized instrumentation sources for observability including activity tracing and metrics.

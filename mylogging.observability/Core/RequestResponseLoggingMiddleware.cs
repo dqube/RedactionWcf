@@ -2,12 +2,11 @@
 using Microsoft.AspNetCore.Http;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
-using mylogging.observability.Common;
 using System.Diagnostics;
 using System.Text;
 using System.Text.Json;
 
-namespace mylogging.observability.Core
+namespace mylogging.observability
 {
     /// <summary>
     /// Middleware for logging requests and responses with correlation tracking
@@ -18,8 +17,7 @@ namespace mylogging.observability.Core
         private readonly RequestDelegate _next;
         private readonly ILogger<RequestResponseLoggingMiddleware> _logger;
         private readonly ObservabilityOptions _options;
-        private readonly ITracingService? _tracingService;
-        private readonly IMetricsService? _metricsService;
+      
         private const string CorrelationIdHeader = "X-Correlation-Id";
         private const string ConsumerIdHeader = "X-Consumer-Id";
         private const string UserIdHeader = "X-User-Id";
@@ -48,15 +46,12 @@ namespace mylogging.observability.Core
         /// <param name="tracingService">Optional tracing service for distributed tracing.</param>
         /// <param name="metricsService">Optional metrics service for collecting metrics.</param>
         public RequestResponseLoggingMiddleware(RequestDelegate next, ILogger<RequestResponseLoggingMiddleware> logger,
-             IOptions<ObservabilityOptions> options,
-            ITracingService? tracingService = null,
-            IMetricsService? metricsService = null)
+             IOptions<ObservabilityOptions> options)
         {
             _next = next;
             _logger = logger;
             _options = options.Value;
-            _tracingService = tracingService;
-            _metricsService = metricsService;
+         
         }
 
         /// <summary>

@@ -1,6 +1,6 @@
 ﻿using Microsoft.Extensions.Logging;
 
-namespace mylogging.observability.Common
+namespace mylogging.observability
 {
     /// <summary>
     /// Provides access to the logger factory for .NET Framework applications

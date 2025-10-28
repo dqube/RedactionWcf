@@ -1,7 +1,7 @@
 ﻿using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
+using mylogging.observability;
 using mylogging.observability.Common;
-using mylogging.observability.Framework;
 using OpenTelemetry.Trace;
 using System;
 using System.Configuration;

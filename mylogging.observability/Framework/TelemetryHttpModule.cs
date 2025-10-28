@@ -16,7 +16,7 @@ using System.Web;
 using System.Xml;
 using System.Xml.Linq;
 
-namespace mylogging.observability.Framework
+namespace mylogging.observability
 {
     /// <summary>
     /// Custom HTTP Module for OpenTelemetry WCF instrumentation
