@@ -4,10 +4,9 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using OpenTelemetry;
 using OpenTelemetry.Logs;
+using OpenTelemetry.Metrics;
 using OpenTelemetry.Resources;
-using System;
-using System.Collections.Generic;
-
+using OpenTelemetry.Trace;
 namespace mylogging.observability.Core
 {
     /// <summary>
@@ -40,7 +39,7 @@ namespace mylogging.observability.Core
         /// </example>
         public static IServiceCollection AddObservability(
             this IServiceCollection services,
-            ObservabilityOptions options)
+            mylogging.observability.ObservabilityOptions options)
         {
             if (services == null) throw new ArgumentNullException(nameof(services));
             if (options == null) throw new ArgumentNullException(nameof(options));
@@ -61,6 +60,11 @@ namespace mylogging.observability.Core
                         otel.AddRedactionProcessor(options);
                     }
 
+                    if (options.Logging?.EnableConsoleLogging == true)
+                    {
+                        otel.AddConsoleExporter();
+                    }
+
                     // Add Splunk exporter
                     if (options.SplunkExporter != null && !string.IsNullOrEmpty(options.SplunkExporter.Url))
                     {
@@ -72,6 +76,60 @@ namespace mylogging.observability.Core
                     otel.IncludeScopes = true;
                 });
             });
+
+            // Configure OpenTelemetry Tracing
+            if (options.Tracing?.EnableHttpServerInstrumentation == true ||
+                options.Tracing?.EnableHttpClientInstrumentation == true ||
+                options.Tracing?.EnableSqlClientInstrumentation == true)
+            {
+                services.AddOpenTelemetry()
+                    .WithTracing(tracing =>
+                    {
+                        tracing.SetResourceBuilder(CreateResourceBuilder(options));
+
+                        if (options.Tracing.EnableHttpServerInstrumentation)
+                        {
+                            tracing.AddAspNetCoreInstrumentation();
+                        }
+
+                        //if (options.Tracing.EnableHttpClientInstrumentation)
+                        //{
+                        //    tracing.AddHttpClientInstrumentation();
+                        //}
+
+                        //if (options.Tracing.EnableSqlClientInstrumentation)
+                        //{
+                        //    tracing.AddSqlClientInstrumentation();
+                        //}
+
+                        tracing.AddConsoleExporter();
+                    });
+            }
+
+            // Configure OpenTelemetry Metrics
+            if (options.Metrics != null &&
+                (options.Metrics.EnableHttpServerMetrics ||
+                 options.Metrics.EnableHttpClientMetrics ||
+                 options.Metrics.EnableRuntimeMetrics))
+            {
+                services.AddOpenTelemetry()
+                    .WithMetrics(metrics =>
+                    {
+                        metrics.SetResourceBuilder(CreateResourceBuilder(options));
+
+                        if (options.Metrics.EnableHttpServerMetrics)
+                        {
+                            metrics.AddAspNetCoreInstrumentation();
+                        }
+
+                       
+
+                        if (options.Logging?.EnableConsoleLogging == true)
+                        {
+                            metrics.AddConsoleExporter();
+                        }
+                    });
+            }
 
             return services;
         }
@@ -93,6 +151,7 @@ namespace mylogging.observability.Core
         ///         redaction.RedactionText = "[MASKED]";
         ///         redaction.SensitiveKeys.AddRange(new[] { "ssn", "creditcard" });
         ///     })
+        ///     .WithConsoleExporter()
         ///     .Build());
         /// </code>
         /// </example>
@@ -103,17 +162,14 @@ namespace mylogging.observability.Core
             if (services == null) throw new ArgumentNullException(nameof(services));
             if (configure == null) throw new ArgumentNullException(nameof(configure));
 
-            var options = new ObservabilityOptions();
+            var options = new mylogging.observability.ObservabilityOptions();
             var builder = new ObservabilityBuilder(services, options);
             configure(builder);
 
             return services;
         }
 
-      
-      
-
-        private static ResourceBuilder CreateResourceBuilder(ObservabilityOptions options)
+        private static ResourceBuilder CreateResourceBuilder(mylogging.observability.ObservabilityOptions options)
         {
             var resourceBuilder = ResourceBuilder.CreateDefault()
                 .AddService(
@@ -141,14 +197,15 @@ namespace mylogging.observability.Core
     public class ObservabilityBuilder
     {
         private readonly IServiceCollection _services;
-        private readonly ObservabilityOptions _options;
+        private readonly mylogging.observability.ObservabilityOptions _options;
+        private bool _enableConsoleExporter;
 
         /// <summary>
         /// Initializes a new instance of the <see cref="ObservabilityBuilder"/> class.
         /// </summary>
         /// <param name="services">The service collection.</param>
         /// <param name="options">The observability options.</param>
-        public ObservabilityBuilder(IServiceCollection services, ObservabilityOptions options)
+        public ObservabilityBuilder(IServiceCollection services, mylogging.observability.ObservabilityOptions options)
         {
             _services = services ?? throw new ArgumentNullException(nameof(services));
             _options = options ?? throw new ArgumentNullException(nameof(options));
@@ -170,6 +227,27 @@ namespace mylogging.observability.Core
         }
 
         /// <summary>
+        /// Enables console exporter for logs, traces, and metrics.
+        /// </summary>
+        /// <returns>The builder for method chaining.</returns>
+        public ObservabilityBuilder WithConsoleExporter()
+        {
+            _enableConsoleExporter = true;
+
+            if (_options.Logging == null)
+                _options.Logging = new mylogging.observability.LoggingOptions();
+            _options.Logging.EnableConsoleLogging = true;
+
+            if (_options.Tracing == null)
+                _options.Tracing = new mylogging.observability.TracingOptions();
+
+            if (_options.Metrics == null)
+                _options.Metrics = new mylogging.observability.MetricsOptions();
+
+            return this;
+        }
+
+        /// <summary>
         /// Configures Splunk exporter for logs.
         /// </summary>
         /// <param name="url">The Splunk HEC endpoint URL.</param>
@@ -179,9 +257,9 @@ namespace mylogging.observability.Core
         public ObservabilityBuilder WithSplunkExporter(
             string url,
             string token,
-            Action<SplunkExporter>? configure = null)
+            Action<mylogging.observability.SplunkExporter>? configure = null)
         {
-            _options.SplunkExporter = new SplunkExporter
+            _options.SplunkExporter = new mylogging.observability.SplunkExporter
             {
                 Url = url,
                 Token = token,
@@ -199,12 +277,12 @@ namespace mylogging.observability.Core
         /// </summary>
         /// <param name="configure">Optional action to configure redaction settings.</param>
         /// <returns>The builder for method chaining.</returns>
-        public ObservabilityBuilder WithRedaction(Action<RedactionOptions>? configure = null)
+        public ObservabilityBuilder WithRedaction(Action<mylogging.observability.RedactionOptions>? configure = null)
         {
             _options.EnableRedaction = true;
-            
+
             if (_options.Redaction == null)
-                _options.Redaction = new RedactionOptions();
+                _options.Redaction = new mylogging.observability.RedactionOptions();
 
             configure?.Invoke(_options.Redaction);
             return this;
@@ -215,12 +293,26 @@ namespace mylogging.observability.Core
         /// </summary>
         /// <param name="configure">Action to configure tracing.</param>
         /// <returns>The builder for method chaining.</returns>
-        public ObservabilityBuilder WithTracing(Action<TracingOptions> configure)
+        public ObservabilityBuilder WithTracing(Action<mylogging.observability.TracingOptions> configure)
         {
             if (_options.Tracing == null)
-                _options.Tracing = new TracingOptions();
+                _options.Tracing = new mylogging.observability.TracingOptions();
 
             configure(_options.Tracing);
+            return this;
+        }
+
+        /// <summary>
+        /// Configures metrics collection options.
+        /// </summary>
+        /// <param name="configure">Action to configure metrics.</param>
+        /// <returns>The builder for method chaining.</returns>
+        public ObservabilityBuilder WithMetrics(Action<mylogging.observability.MetricsOptions> configure)
+        {
+            if (_options.Metrics == null)
+                _options.Metrics = new mylogging.observability.MetricsOptions();
+
+            configure(_options.Metrics);
             return this;
         }
 
@@ -229,10 +321,10 @@ namespace mylogging.observability.Core
         /// </summary>
         /// <param name="configure">Action to configure request/response logging.</param>
         /// <returns>The builder for method chaining.</returns>
-        public ObservabilityBuilder WithRequestResponseLogging(Action<RequestResponseLoggingOptions> configure)
+        public ObservabilityBuilder WithRequestResponseLogging(Action<mylogging.observability.RequestResponseLoggingOptions> configure)
         {
             if (_options.RequestResponseLogging == null)
-                _options.RequestResponseLogging = new RequestResponseLoggingOptions();
+                _options.RequestResponseLogging = new mylogging.observability.RequestResponseLoggingOptions();
 
             configure(_options.RequestResponseLogging);
             return this;
@@ -275,6 +367,12 @@ namespace mylogging.observability.Core
                         otel.AddRedactionProcessor(_options);
                     }
 
+                    // Add Console exporter
+                    if (_enableConsoleExporter || _options.Logging?.EnableConsoleLogging == true)
+                    {
+                        otel.AddConsoleExporter();
+                    }
+
                     // Add Splunk exporter
                     if (_options.SplunkExporter != null && !string.IsNullOrEmpty(_options.SplunkExporter.Url))
                     {
@@ -285,6 +383,54 @@ namespace mylogging.observability.Core
                     otel.IncludeScopes = true;
                 });
             });
+
+            // Configure OpenTelemetry Tracing
+            if (_options.Tracing != null &&
+                (_options.Tracing.EnableHttpServerInstrumentation ||
+                 _options.Tracing.EnableHttpClientInstrumentation ||
+                 _options.Tracing.EnableSqlClientInstrumentation ))
+            {
+                _services.AddOpenTelemetry()
+                    .WithTracing(tracing =>
+                    {
+                        tracing.SetResourceBuilder(CreateResourceBuilder());
+
+                        if (_options.Tracing.EnableHttpServerInstrumentation)
+                        {
+                            tracing.AddAspNetCoreInstrumentation();
+                        }
+
+                       
+
+                        
+                            tracing.AddConsoleExporter();
+                    });
+            }
+
+            // Configure OpenTelemetry Metrics
+            if (_options.Metrics != null &&
+                (_options.Metrics.EnableHttpServerMetrics ||
+                 _options.Metrics.EnableHttpClientMetrics ||
+                 _options.Metrics.EnableRuntimeMetrics))
+            {
+                _services.AddOpenTelemetry()
+                    .WithMetrics(metrics =>
+                    {
+                        metrics.SetResourceBuilder(CreateResourceBuilder());
+
+                        if (_options.Metrics.EnableHttpServerMetrics)
+                        {
+                            metrics.AddAspNetCoreInstrumentation();
+                        }
+
+                      
+
+                        if (_enableConsoleExporter || _options.Logging?.EnableConsoleLogging == true)
+                        {
+                            metrics.AddConsoleExporter();
+                        }
+                    });
+            }
 
             return _services;
         }
