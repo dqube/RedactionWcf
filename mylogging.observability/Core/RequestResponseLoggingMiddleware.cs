@@ -2,6 +2,9 @@
 using Microsoft.AspNetCore.Http;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
+using OpenTelemetry;
+using OpenTelemetry.Context.Propagation;
+using OpenTelemetry.Trace;
 using System.Diagnostics;
 using System.Text;
 using System.Text.Json;
@@ -11,31 +14,49 @@ namespace mylogging.observability
     /// <summary>
     /// Middleware for logging requests and responses with correlation tracking
     /// Handles API controllers and logs request and response as a single combined entry
+    /// Includes OpenTelemetry distributed tracing support
     /// </summary>
     public class RequestResponseLoggingMiddleware
     {
         private readonly RequestDelegate _next;
         private readonly ILogger<RequestResponseLoggingMiddleware> _logger;
         private readonly ObservabilityOptions _options;
-      
+        private static ActivitySource? _activitySource;
+        private static readonly TextMapPropagator Propagator = Propagators.DefaultTextMapPropagator;
+
         private const string CorrelationIdHeader = "X-Correlation-Id";
         private const string ConsumerIdHeader = "X-Consumer-Id";
         private const string UserIdHeader = "X-User-Id";
+        private const string ActivityKey = "RequestResponseLogging.Activity";
+        private const string RequestStartTimeKey = "RequestResponseLogging.RequestStartTime";
 
-        private static readonly string[] CorrelationIdHeaders = new[] {
-                    "X-Correlation-Id", "CorrelationId", "x-correlation-id",
-                    "correlationId", "Correlation-Id", "correlation-id"
-                };
+        private static ActivitySource ActivitySource
+        {
+            get
+            {
+                if (_activitySource == null)
+                {
+                    _activitySource = new ActivitySource("RequestResponseLogging", "1.0.0");
+                }
+                return _activitySource;
+            }
+        }
 
-        private static readonly string[] ConsumerIdHeaders = new[] {
-                    "X-Consumer-Id", "ConsumerId", "x-consumer-id",
-                    "consumerId", "Consumer-Id", "consumer-id"
-                };
+        // Get header name arrays from options or use defaults
+        private string[] CorrelationIdHeaders => _options?.RequestResponseLogging?.CorrelationIdHeaders?.ToArray() ?? new[] {
+            "X-Correlation-Id", "CorrelationId", "x-correlation-id",
+            "correlationId", "Correlation-Id", "correlation-id"
+        };
 
-        private static readonly string[] UserIdHeaders = new[] {
-                    "X-User-Id", "UserId", "x-user-id",
-                    "userId", "User-Id", "user-id"
-                };
+        private string[] ConsumerIdHeaders => _options?.RequestResponseLogging?.ConsumerIdHeaders?.ToArray() ?? new[] {
+            "X-Consumer-Id", "ConsumerId", "x-consumer-id",
+            "consumerId", "Consumer-Id", "consumer-id"
+        };
+
+        private string[] UserIdHeaders => _options?.RequestResponseLogging?.UserIdHeaders?.ToArray() ?? new[] {
+            "X-User-Id", "UserId", "x-user-id",
+            "userId", "User-Id", "user-id"
+        };
 
         /// <summary>
         /// Initializes a new instance of the <see cref="RequestResponseLoggingMiddleware"/> class.
@@ -43,15 +64,19 @@ namespace mylogging.observability
         /// <param name="next">The next middleware in the pipeline.</param>
         /// <param name="logger">The logger instance for this middleware.</param>
         /// <param name="options">The observability configuration options.</param>
-        /// <param name="tracingService">Optional tracing service for distributed tracing.</param>
-        /// <param name="metricsService">Optional metrics service for collecting metrics.</param>
         public RequestResponseLoggingMiddleware(RequestDelegate next, ILogger<RequestResponseLoggingMiddleware> logger,
              IOptions<ObservabilityOptions> options)
         {
             _next = next;
             _logger = logger;
             _options = options.Value;
-         
+
+            // Initialize ActivitySource with service name from options
+            if (_activitySource == null && _options != null)
+            {
+                _activitySource = new ActivitySource(_options.ServiceName ?? "RequestResponseLogging",
+                    _options.ServiceVersion ?? "1.0.0");
+            }
         }
 
         /// <summary>
@@ -70,6 +95,11 @@ namespace mylogging.observability
 
             var startTime = DateTime.UtcNow;
             var stopwatch = Stopwatch.StartNew();
+            context.Items[RequestStartTimeKey] = startTime;
+
+            // Extract trace context from incoming request headers using Propagator
+            var parentContext = Propagator.Extract(default, context.Request.Headers, ExtractTraceContext);
+            Baggage.Current = parentContext.Baggage;
 
             // Extract correlation information from headers
             string? correlationId = GetHeaderValueWithFallback(context.Request.Headers, CorrelationIdHeaders);
@@ -85,6 +115,7 @@ namespace mylogging.observability
             // Enable request body buffering by copying to a seekable stream
             var originalRequestBody = context.Request.Body;
             var buffer = new MemoryStream();
+            // This copies the entire request body into memory
             await context.Request.Body.CopyToAsync(buffer);
             buffer.Position = 0;
             context.Request.Body = buffer;
@@ -96,9 +127,6 @@ namespace mylogging.observability
                 requestBody = await ReadRequestBodyAsync(context.Request);
             }
 
-            // Restore the original stream (though the buffered one will be used by downstream middleware)
-            // Note: We keep the buffer as the request body for downstream middleware to read
-
             // Extract IDs from body if not in headers
             bool needsBodyExtraction = string.IsNullOrEmpty(consumerId) || string.IsNullOrEmpty(userId);
             if (needsBodyExtraction && !string.IsNullOrEmpty(requestBody))
@@ -109,6 +137,108 @@ namespace mylogging.observability
 
             // Parse ClassName and OperationName from path
             ParseClassAndOperationName(context.Request.Path, out string? className, out string? operationName);
+            if (string.IsNullOrEmpty(operationName))
+            {
+                operationName = className;
+            }
+
+            // Store correlation info in HttpContext.Items for downstream access
+            if (!string.IsNullOrEmpty(correlationId))
+                context.Items["CorrelationId"] = correlationId;
+            if (!string.IsNullOrEmpty(consumerId))
+                context.Items["ConsumerId"] = consumerId;
+            if (!string.IsNullOrEmpty(userId))
+                context.Items["UserId"] = userId;
+            if (!string.IsNullOrEmpty(className))
+                context.Items["ClassName"] = className;
+            if (!string.IsNullOrEmpty(operationName))
+                context.Items["OperationName"] = operationName;
+
+            // Start activity with extracted parent context
+            Activity? activity = null;
+            activity = ActivitySource.StartActivity(
+                $"{className}.{operationName}",
+                ActivityKind.Server,
+                parentContext.ActivityContext);
+
+            // Fallback mechanism if ActivitySource returns null
+            if (activity == null)
+            {
+                _logger.LogWarning($"ActivitySource.StartActivity returned null. ActivitySource name: {ActivitySource.Name}. " +
+                                 "Ensure OpenTelemetry TracerProvider is configured with AddSource(\"{ActivitySourceName}\")",
+                                 ActivitySource.Name);
+
+                // Try to use existing Activity.Current or create a new one manually
+                if (Activity.Current != null)
+                {
+                    activity = Activity.Current;
+                }
+                else
+                {
+                    // Manual activity creation as last resort
+                    activity = new Activity($"{className}.{operationName}");
+                    activity.SetParentId(parentContext.ActivityContext.TraceId,
+                        parentContext.ActivityContext.SpanId,
+                        parentContext.ActivityContext.TraceFlags);
+                    activity.Start();
+                }
+            }
+
+            if (activity != null)
+            {
+                // Set Activity.Current so it can be accessed in downstream code
+                Activity.Current = activity;
+
+                // Set standard OpenTelemetry semantic conventions
+                activity.SetTag("http.method", context.Request.Method);
+                activity.SetTag("http.url", $"{context.Request.Scheme}://{context.Request.Host}{context.Request.Path}{context.Request.QueryString}");
+                activity.SetTag("http.target", context.Request.Path + context.Request.QueryString.ToString());
+                activity.SetTag("http.host", context.Request.Host.ToString());
+                activity.SetTag("http.scheme", context.Request.Scheme);
+                activity.SetTag("net.host.name", context.Request.Host.Host);
+                if (context.Request.Host.Port.HasValue)
+                {
+                    activity.SetTag("net.host.port", context.Request.Host.Port.Value);
+                }
+
+                // Add service information
+                if (!string.IsNullOrEmpty(_options?.ServiceName))
+                    activity.SetTag("service.name", _options.ServiceName);
+                if (!string.IsNullOrEmpty(_options?.ServiceVersion))
+                    activity.SetTag("service.version", _options.ServiceVersion);
+
+                // Add correlation IDs to activity
+                if (!string.IsNullOrEmpty(correlationId))
+                    activity.SetTag("correlation.id", correlationId);
+                if (!string.IsNullOrEmpty(consumerId))
+                    activity.SetTag("consumer.id", consumerId);
+                if (!string.IsNullOrEmpty(userId))
+                    activity.SetTag("user.id", userId);
+
+                // Add class and operation name
+                if (!string.IsNullOrEmpty(className))
+                    activity.SetTag("code.namespace", className);
+                if (!string.IsNullOrEmpty(operationName))
+                    activity.SetTag("code.function", operationName);
+
+                // Add user agent and client IP
+                if (context.Request.Headers.TryGetValue("User-Agent", out var userAgent))
+                    activity.SetTag("http.user_agent", userAgent.ToString());
+
+                var clientIp = context.Connection.RemoteIpAddress?.ToString();
+                if (!string.IsNullOrEmpty(clientIp))
+                    activity.SetTag("net.peer.ip", clientIp);
+
+                // Log request body size
+                if (requestBody != null)
+                    activity.SetTag("http.request_content_length", requestBody.Length);
+
+                // Store activity in context for later retrieval
+                context.Items[ActivityKey] = activity;
+
+                // Add enrichment event
+                activity.AddEvent(new ActivityEvent("RequestStarted"));
+            }
 
             // Capture request details
             var requestInfo = new RequestInfo
@@ -160,8 +290,26 @@ namespace mylogging.observability
                     Body = responseBody
                 };
 
+                // Update activity with response information
+                if (activity != null)
+                {
+                    activity.SetTag("http.status_code", context.Response.StatusCode);
+
+                    if (responseBody != null)
+                        activity.SetTag("http.response_content_length", responseBody.Length);
+
+                    // Set activity status based on response
+                    if (context.Response.StatusCode >= 400)
+                        activity.SetStatus(ActivityStatusCode.Error, $"HTTP {context.Response.StatusCode}");
+                    else
+                        activity.SetStatus(ActivityStatusCode.Ok);
+
+                    activity.AddEvent(new ActivityEvent("RequestCompleted"));
+                }
+
                 // Log combined request/response
-                LogRequestResponse(correlationId, consumerId, userId, requestInfo, responseInfo, stopwatch.Elapsed);
+                LogRequestResponse(correlationId, consumerId, userId, requestInfo, responseInfo,
+                    stopwatch.Elapsed, activity);
 
                 // Copy response body back to original stream
                 responseBodyStream.Seek(0, SeekOrigin.Begin);
@@ -171,15 +319,64 @@ namespace mylogging.observability
             {
                 stopwatch.Stop();
 
+                // Update activity with error information
+                if (activity != null)
+                {
+                    activity.SetStatus(ActivityStatusCode.Error, ex.Message);
+                    // activity.RecordException(ex);  // Remove this obsolete line
+                    activity.SetTag("error", true);
+                    activity.SetTag("exception.type", ex.GetType().FullName);
+                    activity.SetTag("exception.message", ex.Message);
+                    if (ex.StackTrace != null)
+                        activity.SetTag("exception.stacktrace", ex.StackTrace);
+                }
+
                 // Log error
-                LogError(correlationId, consumerId, userId, requestInfo, ex, stopwatch.Elapsed);
+                LogError(correlationId, consumerId, userId, requestInfo, ex, stopwatch.Elapsed, activity);
 
                 throw;
             }
             finally
             {
                 context.Response.Body = originalBodyStream;
+
+                // Dispose activity properly
+                if (activity != null)
+                {
+                    try
+                    {
+                        // Stop the activity (marks end time and duration)
+                        activity.Stop();
+
+                        // Dispose the activity (releases resources)
+                        activity.Dispose();
+
+                        // Clear the activity from context to prevent double-disposal
+                        context.Items.Remove(ActivityKey);
+
+                        // Reset Activity.Current if it's our activity to prevent memory leaks
+                        if (Activity.Current == activity)
+                            Activity.Current = null;
+                    }
+                    catch (Exception disposeEx)
+                    {
+                        // Log but don't throw - disposal errors shouldn't break the pipeline
+                        _logger.LogWarning(disposeEx, "Error disposing activity");
+                    }
+                }
             }
+        }
+
+        /// <summary>
+        /// Extracts trace context from HTTP headers for distributed tracing
+        /// </summary>
+        private IEnumerable<string> ExtractTraceContext(IHeaderDictionary headers, string key)
+        {
+            if (headers.TryGetValue(key, out var values))
+            {
+                return values.ToArray();
+            }
+            return Enumerable.Empty<string>();
         }
 
         /// <summary>
@@ -200,10 +397,10 @@ namespace mylogging.observability
                     leaveOpen: true);
 
                 var body = await reader.ReadToEndAsync();
-                
+
                 // Reset position for the next middleware to read
                 request.Body.Position = 0;
-                
+
                 Debug.WriteLine($"Successfully read request body: {body?.Length ?? 0} characters");
                 return body;
             }
@@ -326,7 +523,6 @@ namespace mylogging.observability
                 {
                     ExtractFromJson(body, ref correlationId, ref consumerId, ref userId);
                 }
-
             }
             catch (Exception ex)
             {
@@ -421,15 +617,15 @@ namespace mylogging.observability
             return null;
         }
 
-
         /// <summary>
         /// Logs combined request and response as a single log entry
         /// </summary>
         private void LogRequestResponse(string correlationId, string? consumerId, string? userId,
-            RequestInfo requestInfo, ResponseInfo responseInfo, TimeSpan duration)
+            RequestInfo requestInfo, ResponseInfo responseInfo, TimeSpan duration, Activity? activity = null)
         {
-            // Log with structured logging - headers will be properly captured
-           
+            // Check if logging should occur
+            if (_options?.EnableRequestResponseLogging == false)
+                return;
 
             // For detailed debugging, still use JSON serialization in Debug output
             var combinedLog = new
@@ -441,6 +637,8 @@ namespace mylogging.observability
                 requestInfo.ClassName,
                 OperationName = requestInfo.OperationName ?? requestInfo.ClassName,
                 ExecutionTime = duration.TotalMilliseconds,
+                TraceId = activity?.TraceId.ToString() ?? "N/A",
+                SpanId = activity?.SpanId.ToString() ?? "N/A",
                 Request = new
                 {
                     requestInfo.Timestamp,
@@ -465,22 +663,29 @@ namespace mylogging.observability
             {
                 WriteIndented = true
             });
+
             _logger.LogInformation(
-               "Request/Response: {ClassName}.{OperationName} | CorrelationId: {CorrelationId} | " +
-               "ExecutionTime: {ExecutionTime} | StatusCode: {StatusCode} | " +
-               "{Method} {Path} | RequestHeaders: {@RequestHeaders} | ResponseHeaders: {@ResponseHeaders} | " +
+               "Request/Response: {ClassName}.{OperationName} | CorrelationId: {CorrelationId} | ConsumerId: {ConsumerId} | UserId: {UserId} | " +
+               "ExecutionTime: {ExecutionTime}ms | StatusCode: {StatusCode} | " +
+               "{Method} {Path} | TraceId: {TraceId} | SpanId: {SpanId} | " +
+               "RequestHeaders: {@RequestHeaders} | ResponseHeaders: {@ResponseHeaders} | " +
                "RequestBody: {RequestBody} | ResponseBody: {ResponseBody}",
                requestInfo.ClassName,
                requestInfo.OperationName ?? requestInfo.ClassName,
                correlationId,
+               consumerId ?? "unknown",
+               userId ?? "anonymous",
                duration.TotalMilliseconds,
                responseInfo.StatusCode,
                requestInfo.Method,
                requestInfo.Path,
+               activity?.TraceId.ToString() ?? "N/A",
+               activity?.SpanId.ToString() ?? "N/A",
                requestInfo.Headers,
                responseInfo.Headers,
                requestInfo.Body,
                responseInfo.Body);
+
             Debug.WriteLine("=== REQUEST/RESPONSE LOG ===");
             Debug.WriteLine(logMessage);
             Debug.WriteLine("============================");
@@ -490,7 +695,7 @@ namespace mylogging.observability
         /// Logs error with request details
         /// </summary>
         private void LogError(string correlationId, string? consumerId, string? userId,
-            RequestInfo requestInfo, Exception exception, TimeSpan duration)
+            RequestInfo requestInfo, Exception exception, TimeSpan duration, Activity? activity = null)
         {
             var errorLog = new
             {
@@ -501,6 +706,8 @@ namespace mylogging.observability
                 requestInfo.ClassName,
                 OperationName = requestInfo.OperationName ?? requestInfo.ClassName,
                 ExecutionTime = duration.TotalMilliseconds,
+                TraceId = activity?.TraceId.ToString() ?? "N/A",
+                SpanId = activity?.SpanId.ToString() ?? "N/A",
                 Request = new
                 {
                     requestInfo.Timestamp,
@@ -527,22 +734,29 @@ namespace mylogging.observability
             });
 
             _logger.LogError(exception,
-                "Error: {ClassName}.{OperationName} | CorrelationId: {CorrelationId} | " +
-                "ExecutionTime: {ExecutionTime} | {Method} {Path} | " +
+                "Error: {ClassName}.{OperationName} | CorrelationId: {CorrelationId} | ConsumerId: {ConsumerId} | UserId: {UserId} | " +
+                "ExecutionTime: {ExecutionTime}ms | {Method} {Path} | " +
+                "TraceId: {TraceId} | SpanId: {SpanId} | " +
                 "RequestHeaders: {@RequestHeaders} | RequestBody: {RequestBody} | " +
                 "ExceptionType: {ExceptionType} | ExceptionMessage: {ExceptionMessage}",
                 requestInfo.ClassName,
                 requestInfo.OperationName ?? requestInfo.ClassName,
                 correlationId,
+                consumerId ?? "unknown",
+                userId ?? "anonymous",
                 duration.TotalMilliseconds,
                 requestInfo.Method,
                 requestInfo.Path,
+                activity?.TraceId.ToString() ?? "N/A",
+                activity?.SpanId.ToString() ?? "N/A",
                 requestInfo.Headers,
                 requestInfo.Body,
                 exception.GetType().Name,
                 exception.Message);
 
-
+            Debug.WriteLine("=== ERROR LOG ===");
+            Debug.WriteLine(logMessage);
+            Debug.WriteLine("=================");
         }
 
         /// <summary>
@@ -553,6 +767,28 @@ namespace mylogging.observability
             var path = request.Path.Value?.ToLowerInvariant() ?? string.Empty;
             var contentType = request.ContentType?.ToLowerInvariant() ?? string.Empty;
             var acceptHeader = request.Headers["Accept"].ToString().ToLowerInvariant();
+
+            // Check excluded paths from configuration
+            if (_options?.RequestResponseLogging?.ExcludePaths != null && _options.RequestResponseLogging.ExcludePaths.Any())
+            {
+                if (_options.RequestResponseLogging.ExcludePaths.Any(excluded =>
+                    path.Contains(excluded.ToLowerInvariant())))
+                {
+                    return true;
+                }
+            }
+            else
+            {
+                // Use default excluded paths
+                var excludedPaths = new[] {
+                    "/swagger", "/health", "/metrics", "/favicon.ico", "/_framework", "/_content"
+                };
+
+                if (excludedPaths.Any(excluded => path.StartsWith(excluded)))
+                {
+                    return true;
+                }
+            }
 
             // Skip if requesting HTML pages
             if (acceptHeader.Contains("text/html"))
@@ -565,16 +801,6 @@ namespace mylogging.observability
                                                   ".woff", ".woff2", ".ttf", ".eot", ".svg", ".map", ".html", ".htm" };
 
             if (staticExtensions.Any(ext => path.EndsWith(ext)))
-            {
-                return true;
-            }
-
-            // Skip common paths
-            var excludedPaths = new[] {
-                        "/swagger", "/health", "/metrics", "/favicon.ico", "/_framework", "/_content"
-                    };
-
-            if (excludedPaths.Any(excluded => path.StartsWith(excluded)))
             {
                 return true;
             }

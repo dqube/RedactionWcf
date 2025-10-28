@@ -1,4 +1,5 @@
-using mylogging.observability;
+﻿using mylogging.observability;
+using mylogging.observability.Core;
 using RedactionCore.Middleware;
 
 namespace RedactionCore
@@ -9,6 +10,14 @@ namespace RedactionCore
         {
             var builder = WebApplication.CreateBuilder(args);
 
+            // ✅ Read Observability configuration from appsettings.json
+            var observabilityOptions = new ObservabilityOptions();
+            builder.Configuration.GetSection("Observability").Bind(observabilityOptions);
+
+            // ✅ Add Observability with Splunk exporter and redaction from configuration
+               builder.Services.AddObservability(observabilityOptions);
+            
+
             // Add services to the container.
             builder.Services.AddControllers();
             // Learn more about configuring Swagger/OpenAPI at https://aka.ms/aspnetcore/swashbuckle
@@ -16,6 +25,20 @@ namespace RedactionCore
             builder.Services.AddSwaggerGen();
 
             var app = builder.Build();
+
+            // ✅ Log startup information
+            var logger = app.Services.GetRequiredService<ILogger<Program>>();
+            logger.LogInformation("==============================================");
+            logger.LogInformation("? Observability Configuration Loaded");
+            logger.LogInformation("  Service: {ServiceName} v{ServiceVersion}", 
+                observabilityOptions.ServiceName, observabilityOptions.ServiceVersion);
+            logger.LogInformation("  Namespace: {Namespace}", observabilityOptions.ServiceNamespace);
+            logger.LogInformation("  Business Process: {BusinessProcess}", observabilityOptions.BusinessProcess);
+            logger.LogInformation("  Redaction: {Enabled}", observabilityOptions.EnableRedaction ? "Enabled" : "Disabled");
+            logger.LogInformation("  Splunk Exporter: {Url}", observabilityOptions.SplunkExporter?.Url ?? "Not configured");
+            logger.LogInformation("  Request/Response Logging: {Enabled}", observabilityOptions.EnableRequestResponseLogging ? "Enabled" : "Disabled");
+            logger.LogInformation("  Sensitive Keys Count: {Count}", observabilityOptions.Redaction?.SensitiveKeys?.Count ?? 0);
+            logger.LogInformation("==============================================");
 
             // Configure the HTTP request pipeline.
             if (app.Environment.IsDevelopment())

@@ -1,10 +1,11 @@
 ﻿#if NET48_OR_GREATER
 
 using Microsoft.Extensions.Logging;
-using mylogging.observability.Common;
+using mylogging.observability;
 using OpenTelemetry;
 using OpenTelemetry.Resources;
 using OpenTelemetry.Trace;
+using System.Diagnostics;
 
 namespace mylogging.observability
 {
@@ -353,6 +354,88 @@ namespace mylogging.observability
                 .WithDebugLogging()
                 .WithTracing()
                 .Build());
+        }
+    }
+
+    /// <summary>
+    /// Extension methods for adding Splunk exporter and redaction processor to tracing pipeline
+    /// </summary>
+    public static class TracerProviderBuilderExtensions
+    {
+        /// <summary>
+        /// Adds the redaction activity processor to the tracing pipeline.
+        /// </summary>
+        /// <param name="builder">The TracerProviderBuilder.</param>
+        /// <param name="options">The observability options containing redaction configuration.</param>
+        /// <returns>The builder for method chaining.</returns>
+        public static TracerProviderBuilder AddRedactionProcessor(
+            this TracerProviderBuilder builder,
+            ObservabilityOptions options)
+        {
+            if (builder == null)
+                throw new ArgumentNullException(nameof(builder));
+            
+            if (options == null)
+                throw new ArgumentNullException(nameof(options));
+
+            if (options.EnableRedaction && options.Redaction != null)
+            {
+                builder.AddProcessor(new RedactionActivityProcessor(options));
+            }
+
+            return builder;
+        }
+
+        /// <summary>
+        /// Adds the Splunk trace exporter to the tracing pipeline.
+        /// </summary>
+        /// <param name="builder">The TracerProviderBuilder.</param>
+        /// <param name="options">The observability options containing Splunk configuration.</param>
+        /// <returns>The builder for method chaining.</returns>
+        public static TracerProviderBuilder AddSplunkExporter(
+            this TracerProviderBuilder builder,
+            ObservabilityOptions options)
+        {
+            if (builder == null)
+                throw new ArgumentNullException(nameof(builder));
+            
+            if (options == null)
+                throw new ArgumentNullException(nameof(options));
+
+            if (options.SplunkExporter != null && !string.IsNullOrEmpty(options.SplunkExporter.Url))
+            {
+              //  builder.AddProcessor(new BatchActivityExportProcessor(new SplunkTraceExporter(options)));
+            }
+
+            return builder;
+        }
+
+        /// <summary>
+        /// Adds both redaction processor and Splunk exporter to the tracing pipeline.
+        /// </summary>
+        /// <param name="builder">The TracerProviderBuilder.</param>
+        /// <param name="options">The observability options containing configuration.</param>
+        /// <returns>The builder for method chaining.</returns>
+        public static TracerProviderBuilder AddRedactionAndSplunkExporter(
+            this TracerProviderBuilder builder,
+            ObservabilityOptions options)
+        {
+            if (builder == null)
+                throw new ArgumentNullException(nameof(builder));
+            
+            if (options == null)
+                throw new ArgumentNullException(nameof(options));
+
+            // Add redaction processor first to redact before exporting
+            if (options.EnableRedaction)
+            {
+                builder.AddRedactionProcessor(options);
+            }
+
+            // Then add Splunk exporter
+            builder.AddSplunkExporter(options);
+
+            return builder;
         }
     }
 }

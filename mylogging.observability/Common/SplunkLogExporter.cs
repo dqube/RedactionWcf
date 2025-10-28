@@ -7,7 +7,7 @@ using System.Net.Http.Headers;
 using System.Text;
 using System.Text.Json;
 
-namespace mylogging.observability.Common
+namespace mylogging.observability
 {
     /// <summary>
     /// Exports OpenTelemetry log records to Splunk HTTP Event Collector (HEC).

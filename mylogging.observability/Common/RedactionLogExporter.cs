@@ -2,7 +2,7 @@
 using OpenTelemetry.Logs;
 using System.Text.RegularExpressions;
 
-namespace mylogging.observability.Common
+namespace mylogging.observability
 {
     /// <summary>
     /// Processes OpenTelemetry log records to redact sensitive information based on configuration.
